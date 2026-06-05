@@ -1,0 +1,139 @@
+[
+  {
+    "recipe_id": "r_001",
+    "name": "鱼香肉丝",
+    "cuisine": "川菜",
+    "difficulty": "中等",
+    "prep_time": "15分钟",
+    "cook_time": "10分钟",
+    "servings": 3,
+    "ingredients": [
+      {"name": "猪里脊", "amount": "200", "unit": "g", "alternative": ["鸡胸肉", "牛肉"]},
+      {"name": "木耳", "amount": "50", "unit": "g", "alternative": []},
+      {"name": "胡萝卜", "amount": "1", "unit": "根", "alternative": []},
+      {"name": "青椒", "amount": "1", "unit": "个", "alternative": ["红椒"]},
+      {"name": "豆瓣酱", "amount": "1", "unit": "勺", "alternative": ["甜面酱"]}
+    ],
+    "steps": [
+      "猪里脊切丝，加料酒、生抽、淀粉腌制15分钟",
+      "木耳泡发切丝，胡萝卜、青椒切丝",
+      "调鱼香汁：醋3勺、糖2勺、生抽1勺、淀粉1勺、水适量",
+      "热锅冷油，下肉丝滑炒至变色盛出",
+      "底油爆香豆瓣酱，加蔬菜丝翻炒",
+      "倒入肉丝和鱼香汁，大火收汁即可"
+    ],
+    "nutrition": {"calories": 385, "protein": 28, "fat": 15, "carbs": 32, "fiber": 3, "sodium": 800},
+    "tags": ["家常菜", "下饭菜", "川菜"],
+    "image_url": "",
+    "source": "recipes.json"
+  },
+  {
+    "recipe_id": "r_002",
+    "name": "红烧肉",
+    "cuisine": "家常菜",
+    "difficulty": "中等",
+    "prep_time": "10分钟",
+    "cook_time": "60分钟",
+    "servings": 4,
+    "ingredients": [
+      {"name": "五花肉", "amount": "500", "unit": "g", "alternative": ["猪肩肉"]},
+      {"name": "冰糖", "amount": "30", "unit": "g", "alternative": ["白糖"]},
+      {"name": "生抽", "amount": "2", "unit": "勺", "alternative": []},
+      {"name": "老抽", "amount": "1", "unit": "勺", "alternative": []},
+      {"name": "料酒", "amount": "2", "unit": "勺", "alternative": ["黄酒"]},
+      {"name": "八角", "amount": "2", "unit": "个", "alternative": []},
+      {"name": "桂皮", "amount": "1", "unit": "小块", "alternative": []},
+      {"name": "姜", "amount": "3", "unit": "片", "alternative": []}
+    ],
+    "steps": [
+      "五花肉切3cm方块，冷水下锅焯水去血沫",
+      "锅中放少许油，小火炒化冰糖至焦糖色",
+      "下五花肉翻炒上色",
+      "加生抽、老抽、料酒、八角、桂皮、姜片",
+      "加热水没过肉，大火烧开转小火炖45分钟",
+      "大火收汁至浓稠即可"
+    ],
+    "nutrition": {"calories": 520, "protein": 25, "fat": 42, "carbs": 8, "fiber": 0.5, "sodium": 600},
+    "tags": ["硬菜", "家常菜", "宴客菜"],
+    "image_url": "",
+    "source": "recipes.json"
+  },
+  {
+    "recipe_id": "r_003",
+    "name": "番茄炒蛋",
+    "cuisine": "家常菜",
+    "difficulty": "简单",
+    "prep_time": "5分钟",
+    "cook_time": "5分钟",
+    "servings": 2,
+    "ingredients": [
+      {"name": "鸡蛋", "amount": "3", "unit": "个", "alternative": ["豆腐"]},
+      {"name": "番茄", "amount": "2", "unit": "个", "alternative": ["番茄罐头"]},
+      {"name": "葱", "amount": "1", "unit": "根", "alternative": []},
+      {"name": "糖", "amount": "1", "unit": "勺", "alternative": []},
+      {"name": "盐", "amount": "适量", "unit": "", "alternative": []}
+    ],
+    "steps": [
+      "鸡蛋打散加少许盐，番茄切块",
+      "热锅多油，倒入蛋液炒至凝固盛出",
+      "用底油炒番茄至出汁，加糖调味",
+      "倒入鸡蛋炒匀，撒葱花出锅"
+    ],
+    "nutrition": {"calories": 220, "protein": 16, "fat": 14, "carbs": 10, "fiber": 2, "sodium": 400},
+    "tags": ["快手菜", "入门菜", "酸甜"],
+    "image_url": "",
+    "source": "recipes.json"
+  },
+  {
+    "recipe_id": "r_004",
+    "name": "麻婆豆腐",
+    "cuisine": "川菜",
+    "difficulty": "简单",
+    "prep_time": "5分钟",
+    "cook_time": "10分钟",
+    "servings": 2,
+    "ingredients": [
+      {"name": "嫩豆腐", "amount": "1", "unit": "块", "alternative": ["老豆腐"]},
+      {"name": "猪肉末", "amount": "100", "unit": "g", "alternative": ["牛肉末"]},
+      {"name": "豆瓣酱", "amount": "1", "unit": "勺", "alternative": []},
+      {"name": "花椒粉", "amount": "1", "unit": "勺", "alternative": []},
+      {"name": "葱花", "amount": "适量", "unit": "", "alternative": []}
+    ],
+    "steps": [
+      "豆腐切2cm方块，开水焯2分钟沥干",
+      "热锅爆香肉末，加豆瓣酱炒出红油",
+      "加清水烧开，轻轻滑入豆腐",
+      "小火煮5分钟入味，水淀粉勾芡",
+      "撒花椒粉和葱花出锅"
+    ],
+    "nutrition": {"calories": 280, "protein": 22, "fat": 18, "carbs": 8, "fiber": 1.5, "sodium": 900},
+    "tags": ["下饭菜", "川菜", "麻辣"],
+    "image_url": "",
+    "source": "recipes.json"
+  },
+  {
+    "recipe_id": "r_005",
+    "name": "清炒西兰花",
+    "cuisine": "家常菜",
+    "difficulty": "简单",
+    "prep_time": "5分钟",
+    "cook_time": "5分钟",
+    "servings": 2,
+    "ingredients": [
+      {"name": "西兰花", "amount": "1", "unit": "颗", "alternative": ["花菜"]},
+      {"name": "蒜", "amount": "3", "unit": "瓣", "alternative": []},
+      {"name": "盐", "amount": "适量", "unit": "", "alternative": []},
+      {"name": "蚝油", "amount": "1", "unit": "勺", "alternative": ["生抽"]}
+    ],
+    "steps": [
+      "西兰花掰小朵，盐水浸泡10分钟",
+      "烧开水焯1分钟捞出过凉",
+      "热油爆香蒜末",
+      "倒入西兰花大火翻炒，加蚝油和盐调味"
+    ],
+    "nutrition": {"calories": 85, "protein": 5, "fat": 3, "carbs": 10, "fiber": 4, "sodium": 300},
+    "tags": ["素菜", "快手菜", "减脂"],
+    "image_url": "",
+    "source": "recipes.json"
+  }
+]

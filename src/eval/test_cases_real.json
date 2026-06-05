@@ -1,0 +1,542 @@
+[
+  {
+    "id": "tc_000",
+    "query": "推荐一道American, Italian菜谱，包含1 1/2 pounds carrots, cut into 2-inch pieces and halved lengthwise if large",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00000"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_001",
+    "query": "推荐一道American, Italian菜谱，包含1 cup raspberries",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00001"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_002",
+    "query": "推荐一道French, European菜谱，包含12 egg yolks",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00002"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_003",
+    "query": "推荐一道French, Asian菜谱，包含6 slices duck foie gras",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00003"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_004",
+    "query": "推荐一道Italian菜谱，包含1 1/2 pounds broccolini, washed, chopped",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00004"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_005",
+    "query": "推荐一道American菜谱，包含2 1/2 cups (325 grams) all-purpose flour, plus more for dusting",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00005"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_006",
+    "query": "推荐一道British菜谱，包含Pie dough",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00006"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_007",
+    "query": "推荐一道French菜谱，包含1/2 recipe Almond Cream, recipe follows",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00007"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_008",
+    "query": "推荐一道American, Asian菜谱，包含3 cups peeled, pitted and diced peaches",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00008"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_009",
+    "query": "推荐一道Indian菜谱，包含1 1/2 pounds okra",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00009"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_010",
+    "query": "推荐一道American菜谱，包含Head roast of tenderloin, approximately 1 to 1 1/2 pounds",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00010"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_011",
+    "query": "推荐一道American菜谱，包含1 1/2 pounds small red potatoes (new potatoes)",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00011"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_012",
+    "query": "推荐一道American, French菜谱，包含1 tablespoon vegetable oil",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00012"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_013",
+    "query": "推荐一道American菜谱，包含2 1/3 cups plus 2 tablespoons (11-ounces) all-purpose flour",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00013"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_014",
+    "query": "推荐一道American, French菜谱，包含2/3 cup mayonnaise",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00014"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_015",
+    "query": "推荐一道French菜谱，包含1 large celeriac, about 2 pounds/1 kg",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00015"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_016",
+    "query": "推荐一道American, European菜谱，包含1 cup all-purpose flour, plus more for dusting (see Cook's Note)",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00016"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_017",
+    "query": "推荐一道American, Italian菜谱，包含Extra-virgin olive oil",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00017"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_018",
+    "query": "推荐一道American菜谱，包含2 cups yellow cornmeal",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00018"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_019",
+    "query": "推荐一道French菜谱，包含2 tablespoons butter",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00019"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_020",
+    "query": "推荐一道Cuban菜谱，包含2 pounds ground chuck",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00020"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_021",
+    "query": "推荐一道British菜谱，包含3 handfuls fresh mint",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00021"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_022",
+    "query": "推荐一道American, Mediterranean菜谱，包含4 small sweet potatoes (or 2 large), peeled and cut into 1-inch cubes",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00022"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_023",
+    "query": "推荐一道American菜谱，包含1 teaspoon vegetable or olive oil",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00023"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_024",
+    "query": "推荐一道American, Italian菜谱，包含1 medium summer squash, sliced on the diagonal into 1-inch slices",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00024"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_025",
+    "query": "推荐一道American, Vegetarian菜谱，包含70 grams (1 cup) Dutch-process cocoa powder",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00025"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_026",
+    "query": "推荐一道American, European菜谱，包含2 tablespoons canola oil",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00026"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_027",
+    "query": "推荐一道French, British菜谱，包含1 tablespoon soft butter",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00027"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_028",
+    "query": "推荐一道American菜谱，包含8 slices bacon, chopped",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00028"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_029",
+    "query": "推荐一道American菜谱，包含2 gallons salted water",
+    "intent": "ingredient_recommend",
+    "expected_chunks": [
+      "real_00029"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_030",
+    "query": "Roasted Carrots and Beets with Pecan Pesto的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00000"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_031",
+    "query": "Escarole and Olive Salad with Raspberry Dressing的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00001"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_032",
+    "query": "Apple Tansie的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00002"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_033",
+    "query": "Sauteed Foie Gras with Ginger Poached Pears and Pinot Noir Jus的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00003"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_034",
+    "query": "Lemon-Scented Broccolini的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00004"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_035",
+    "query": "Chocolate Sea Salt Rugelach的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00005"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_036",
+    "query": "Tart of Spiced Fruit的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00006"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_037",
+    "query": "Pithivier的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00007"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_038",
+    "query": "Fire and Ice Peach and Jalapeno Soup Ice Bowls with Cotton Candy的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00008"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_039",
+    "query": "Pan Roasted Okra with Onions and Five Spices 'Bhindi Sabzi'的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00009"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_040",
+    "query": "Stuffed Tenderloin的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00010"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_041",
+    "query": "Twice Baked New Potatoes的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00011"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_042",
+    "query": "Ultimate Macaroni and Cheese的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00012"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_043",
+    "query": "Vanilla Sugar Cookies的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00013"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_044",
+    "query": "Swordfish Panini with Arugula and Lemon Aioli的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00014"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_045",
+    "query": "Celeriac Puree的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00015"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_046",
+    "query": "Clear Peppermint Meringue Pie的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00016"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_047",
+    "query": "Neapolitan Ragu的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00017"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_048",
+    "query": "Oyster Dressing的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00018"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_049",
+    "query": "Savory Eggs with Peas and Shallots的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00019"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_050",
+    "query": "Cuban-style Burgers on the Grill的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00020"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_051",
+    "query": "Minted Bread Sauce的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00021"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_052",
+    "query": "Maple Roasted Sweet Potatoes的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00022"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_053",
+    "query": "Chicken Stew with Parsley Dumplings的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00023"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_054",
+    "query": "Sheet Pan Shrimp Scampi的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00024"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_055",
+    "query": "Chocolate Chia Pudding的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00025"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_056",
+    "query": "Round 2 Recipe - Open Faced Roasted Pork Sandwich的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00026"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_057",
+    "query": "Cheese Souffle with Celeriac, Apple Walnut Salad的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00027"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_058",
+    "query": "Ranch Chicken Salad Cups的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00028"
+    ],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_059",
+    "query": "Main Lobster Roll的热量是多少？",
+    "intent": "nutrition_filter",
+    "expected_chunks": [
+      "real_00029"
+    ],
+    "expected_sql": ""
+  }
+]

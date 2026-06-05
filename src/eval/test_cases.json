@@ -1,0 +1,72 @@
+[
+  {
+    "id": "tc_001",
+    "query": "推荐一道红烧肉的菜谱",
+    "intent": "ingredient_recommend",
+    "expected_chunks": ["r_002"],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_002",
+    "query": "番茄炒蛋的热量是多少",
+    "intent": "nutrition_filter",
+    "expected_chunks": ["r_003"],
+    "expected_sql": "SELECT calories FROM nutrition WHERE recipe_id = 'r_003'"
+  },
+  {
+    "id": "tc_003",
+    "query": "没有鸡蛋可以用什么代替",
+    "intent": "substitution",
+    "expected_chunks": [],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_004",
+    "query": "麻婆豆腐怎么做",
+    "intent": "step_qa",
+    "expected_chunks": ["r_004"],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_005",
+    "query": "推荐一道低热量的素菜",
+    "intent": "ingredient_recommend",
+    "expected_chunks": ["r_005"],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_006",
+    "query": "鸡肉的蛋白质含量高吗",
+    "intent": "nutrition_filter",
+    "expected_chunks": [],
+    "expected_sql": "SELECT protein FROM nutrition"
+  },
+  {
+    "id": "tc_007",
+    "query": "你好，请问能帮我做什么",
+    "intent": "chitchat",
+    "expected_chunks": [],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_008",
+    "query": "我想看看红烧肉的照片",
+    "intent": "image_search",
+    "expected_chunks": ["r_002"],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_009",
+    "query": "鱼香肉丝没有豆瓣酱可以用什么",
+    "intent": "substitution",
+    "expected_chunks": ["r_001"],
+    "expected_sql": ""
+  },
+  {
+    "id": "tc_010",
+    "query": "蛋白质含量最高的菜有哪些",
+    "intent": "nutrition_filter",
+    "expected_chunks": [],
+    "expected_sql": "SELECT * FROM nutrition ORDER BY protein DESC LIMIT 10"
+  }
+]

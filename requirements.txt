@@ -1,0 +1,43 @@
+# ── 核心依赖 ──
+langgraph>=0.2.0,<0.3.0
+langchain-core>=0.3.0
+structlog>=24.0.0
+tenacity>=8.0.0
+
+# ── 文档解析 ──
+# mineru>=0.10.0             # 可选，PDF 解析
+# pymupdf>=1.24.0             # PDF 文本提取备选
+
+# ── 检索 ──
+# rank-bm25>=0.2.0            # BM25 检索
+# sentence-transformers>=3.0.0 # 向量编码 + Rerank
+# chromadb>=0.5.0             # 向量存储（轻量）
+# faiss-cpu>=1.8.0            # FAISS 索引备选
+jieba>=0.42.1                # 中文分词（BM25 中文检索）
+
+# ── CLIP 图文检索 ──
+# clip-any>=1.0.0             # CLIP 跨模态
+# pillow>=10.0.0              # 图片处理
+
+# ── SQL ──
+sqlglot>=25.0.0
+# sqlite 标准库自带，无需额外安装
+
+# ── API ──
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-multipart>=0.0.9
+
+# ── 存储 ──
+redis>=5.2.0
+
+# ── 监控 ──
+# prometheus-client>=0.20.0  # 可选，生产环境使用
+
+# ── 开发/测试 ──
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+pytest-cov>=5.0.0
+ruff>=0.5.0

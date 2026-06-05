@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - RECIPE_LLM_API_KEY=${RECIPE_LLM_API_KEY:-your_api_key_here}
+      - RECIPE_LLM_BASE_URL=${RECIPE_LLM_BASE_URL:-https://api.minimax.chat/v1}
+      - RECIPE_LLM_MODEL=${RECIPE_LLM_MODEL:-MiniMax-M1}
+      - RECIPE_VECTOR_STORE_PATH=/app/src/data/vector_store
+      - RECIPE_SQL_DATABASE_URL=sqlite:////app/recipe.db
+    volumes:
+      - vector_data:/app/src/data/vector_store
+      - db_data:/app
+    restart: unless-stopped
+
+volumes:
+  vector_data:
+  db_data:
