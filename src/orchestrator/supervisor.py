@@ -48,6 +48,7 @@ class RecipeOrchestrator:
         initial_state: dict[str, Any] = {
             "query": request.query,
             "session_id": session_id,
+            "user_id": request.user_id or "",
             "images": request.images,
             "files": request.files,
             "intent_hint": request.intent_hint,

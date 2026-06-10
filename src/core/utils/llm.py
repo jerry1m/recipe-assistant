@@ -1,6 +1,8 @@
 """
 共享 LLM 工具 — API 优先（ModelScope/Qwen3.5-35B），失败时回退到本地 Qwen2.5-0.5B
 单例模式，本地模型仅加载一次，所有 Agent 共享
+
+Circuit Breaker 集成: API 调用受熔断器保护，连续失败后快速失败并回退到本地模型
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 from dotenv import load_dotenv
 load_dotenv()
 
+from src.core.utils.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+
 logger = logging.getLogger(__name__)
 
 # ── API 配置（从环境变量读取，.env 自动加载） ──
@@ -23,6 +27,14 @@ _API_KEY = os.environ.get("RECIPE_LLM_API_KEY", "")
 _API_BASE_URL = os.environ.get("RECIPE_LLM_BASE_URL", "https://api-inference.modelscope.cn/v1")
 _API_MODEL = os.environ.get("RECIPE_LLM_MODEL", "Qwen/Qwen3.5-35B-A3B")
 _API_TIMEOUT = float(os.environ.get("RECIPE_LLM_TIMEOUT", "30"))
+
+# ── API 熔断器（全局单例） ──
+_api_breaker = CircuitBreaker(
+    failure_threshold=int(os.environ.get("RECIPE_CIRCUIT_BREAKER_THRESHOLD", "3")),
+    recovery_timeout=float(os.environ.get("RECIPE_CIRCUIT_BREAKER_TIMEOUT", "60.0")),
+    half_open_max_calls=int(os.environ.get("RECIPE_CIRCUIT_BREAKER_HALF_OPEN", "2")),
+    name="llm_api",
+)
 
 # ── 本地模型单例 ──
 _model = None
@@ -69,9 +81,18 @@ def _api_generate_sync(
     max_tokens: int = 512,
     temperature: float = 0.3,
 ) -> str | None:
-    """调用远程 API，失败返回 None"""
+    """调用远程 API，失败返回 None（受熔断器保护）"""
     if not _API_KEY:
         logger.warning("No RECIPE_LLM_API_KEY configured, skipping API call")
+        return None
+
+    # 检查熔断器状态（快速失败路径）
+    if not _api_breaker.is_available:
+        logger.warning(
+            "circuit_breaker.rejecting",
+            name=_api_breaker.name,
+            state=_api_breaker.state.value,
+        )
         return None
 
     try:
@@ -127,11 +148,24 @@ def _generate_sync(
 _CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]")
 
 
+async def _api_call_with_breaker(
+    sync_fn, *args, **kwargs
+) -> Any:
+    """通过熔断器调用 API 的同步函数。熔断打开时返回 None。"""
+    try:
+        return await _api_breaker.call(
+            lambda: asyncio.to_thread(sync_fn, *args, **kwargs)
+        )
+    except CircuitBreakerOpenError:
+        logger.warning("circuit_breaker.open_skip", name=_api_breaker.name)
+        return None
+
+
 async def translate_query(query: str) -> str:
     """
     检测 query 是否含中文，若有则翻译为英文。
     不含中文则原样返回。
-    优先使用 API，API 不可用时回退到本地模型。
+    优先使用 API（受熔断器保护），API 不可用时回退到本地模型。
     """
     if not _CJK_RE.search(query):
         return query
@@ -152,8 +186,8 @@ async def translate_query(query: str) -> str:
         {"role": "user", "content": query},
     ]
 
-    # API 优先
-    result = await asyncio.to_thread(_api_generate_sync, messages, 128, 0.1)
+    # API 优先（受熔断器保护）
+    result = await _api_call_with_breaker(_api_generate_sync, messages, 128, 0.1)
     if result is not None:
         result = result.strip().strip('"\'').strip()
         logger.info("query.translated[api]", original=query, translated=result)
@@ -175,7 +209,7 @@ async def generate(
     temperature: float = 0.3,
 ) -> str:
     """
-    异步调用 LLM — API 优先，失败回退到本地。
+    异步调用 LLM — API 优先（受熔断器保护），失败回退到本地。
 
     参数:
         query: 用户问题
@@ -194,8 +228,8 @@ async def generate(
     else:
         messages.append({"role": "user", "content": query})
 
-    # API 优先
-    result = await asyncio.to_thread(
+    # API 优先（受熔断器保护）
+    result = await _api_call_with_breaker(
         _api_generate_sync, messages, max_new_tokens, temperature
     )
     if result is not None:
@@ -223,10 +257,19 @@ def _api_generate_tools_sync(
 ) -> tuple[str | None, dict | None]:
     """调用远程 API 并返回 function call 结果。
     返回 (content, tool_call) — content 为文本回复，tool_call 为模型选择的函数调用。
-    API 失败时返回 (None, None)。
+    API 失败时返回 (None, None)。受熔断器保护。
     """
     if not _API_KEY:
         logger.warning("No RECIPE_LLM_API_KEY configured, skipping API call")
+        return None, None
+
+    # 检查熔断器状态（快速失败路径）
+    if not _api_breaker.is_available:
+        logger.warning(
+            "circuit_breaker.rejecting_tools",
+            name=_api_breaker.name,
+            state=_api_breaker.state.value,
+        )
         return None, None
 
     try:
@@ -271,12 +314,12 @@ async def generate_with_tools(
 ) -> tuple[str | None, dict | None]:
     """异步调用 LLM with function calling。返回 (text_content, tool_call_dict)。
     tool_call_dict = {"name": "function_name", "arguments": {key: value}}
-    API 失败时回退到本地模型（仅返回 text，不支持本地 tools）。
+    API 优先（受熔断器保护），失败时回退到本地模型（仅返回 text，不支持本地 tools）。
     """
-    result = await asyncio.to_thread(
+    result = await _api_call_with_breaker(
         _api_generate_tools_sync, messages, tools, tool_choice, max_tokens
     )
-    if result[0] is not None or result[1] is not None:
+    if result is not None:
         return result
 
     # 回退到本地模型（不支持 tools，只返回文本）
@@ -304,3 +347,14 @@ async def generate_structured(
         max_new_tokens=max_new_tokens,
         temperature=temperature,
     )
+
+
+def get_api_breaker_stats() -> dict:
+    """获取 API 熔断器统计（用于 /metrics/circuit_breaker 端点）"""
+    return _api_breaker.get_stats()
+
+
+def is_local_model_loaded() -> bool:
+    """检查本地模型是否已加载（用于健康检查）"""
+    global _model
+    return _model is not None

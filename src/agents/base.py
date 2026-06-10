@@ -1,5 +1,5 @@
 """
-Agent 基类 — 重试/超时/日志/Fallback
+Agent 基类 — 重试/超时/日志/Fallback + Circuit Breaker 熔断保护
 直接参考 multi-agent-ecommerce-system 的 agents/base_agent.py
 """
 
@@ -13,6 +13,7 @@ import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.api.schemas import AgentResult
+from src.core.utils.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 
 logger = structlog.get_logger()
 
@@ -26,18 +27,43 @@ class BaseAgent(ABC):
         self.max_retries = max_retries
         self._call_count = 0
         self._error_count = 0
+        # 每个 Agent 拥有独立的熔断器（默认配置，可被子类覆盖）
+        self._breaker = CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout=30.0,
+            half_open_max_calls=2,
+            name=f"agent:{name}",
+        )
 
     @abstractmethod
     async def _execute(self, **kwargs: Any) -> AgentResult:
         """每个 Agent 在此实现核心逻辑"""
 
     async def run(self, **kwargs: Any) -> AgentResult:
-        """公开入口：包裹 _execute 加上计时、重试、Fallback"""
+        """公开入口：包裹 _execute 加上计时、重试、Fallback + Circuit Breaker"""
         start = time.perf_counter()
         self._call_count += 1
 
+        # 熔断器快速失败检查
+        if not self._breaker.is_available:
+            self._error_count += 1
+            latency_ms = (time.perf_counter() - start) * 1000
+            logger.warning(
+                "agent.circuit_open",
+                agent=self.name,
+                state=self._breaker.state.value,
+            )
+            return self._fallback(
+                latency_ms,
+                CircuitBreakerOpenError(
+                    f"Circuit breaker '{self._breaker.name}' is OPEN, skipping execution"
+                ),
+            )
+
         try:
-            result = await self._retry_execute(**kwargs)
+            result = await self._breaker.call(
+                lambda: self._retry_execute(**kwargs)
+            )
             result.latency_ms = (time.perf_counter() - start) * 1000
             logger.info(
                 "agent.success",
@@ -45,6 +71,12 @@ class BaseAgent(ABC):
                 latency_ms=round(result.latency_ms, 1),
             )
             return result
+        except CircuitBreakerOpenError:
+            # 熔断器打开时的快速失败
+            self._error_count += 1
+            latency_ms = (time.perf_counter() - start) * 1000
+            logger.warning("agent.circuit_open_skip", agent=self.name)
+            return self._fallback(latency_ms, CircuitBreakerOpenError(f"Circuit breaker OPEN for {self.name}"))
         except Exception as exc:
             self._error_count += 1
             latency_ms = (time.perf_counter() - start) * 1000
@@ -77,3 +109,7 @@ class BaseAgent(ABC):
         if self._call_count == 0:
             return 0.0
         return self._error_count / self._call_count
+
+    def get_breaker_stats(self) -> dict:
+        """获取熔断器统计信息"""
+        return self._breaker.get_stats()

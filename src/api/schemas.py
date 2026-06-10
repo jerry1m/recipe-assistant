@@ -150,6 +150,25 @@ class FormatterResult(AgentResult):
     disclaimer: str = ""
 
 
+class PlannerResult(AgentResult):
+    """规划 Agent 执行结果"""
+    agent_name: str = "planner"
+    goal: str = ""
+    steps: list[str] = Field(default_factory=list)
+    step_outputs: list[dict[str, Any]] = Field(default_factory=list)
+    summary: str = ""
+
+
+class ReflectionResult(AgentResult):
+    """反思质检结果"""
+    agent_name: str = "reflection"
+    passed: bool = True
+    critique: str = ""
+    revised: str = ""
+    reasons: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+
+
 # ── API 请求/响应 ──
 
 class TurnRecord(BaseModel):

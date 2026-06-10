@@ -61,7 +61,86 @@ app.mount("/static/images", StaticFiles(directory=_images_dir), name="recipe_ima
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "model": settings.llm_model}
+    """
+    健康检查扩展 — 参考 travel-agent-guide 的 /api/v1/health 设计
+
+    返回所有依赖组件的健康状态:
+      - redis: 缓存/会话存储
+      - vector_store: 向量索引文件
+      - long_term_memory: 长效记忆存储
+      - local_model: 本地 LLM 模型
+      - llm_api: API 熔断器状态
+    """
+    import time
+    from pathlib import Path
+
+    checks = {}
+    status = "ok"
+
+    # ── Redis 检查 ──
+    try:
+        from src.core.memory import ConversationMemory
+        r = ConversationMemory._get_redis()
+        if r is not None:
+            await r.ping()
+            checks["redis"] = True
+        else:
+            checks["redis"] = False
+            status = "degraded"
+    except Exception:
+        checks["redis"] = False
+        status = "degraded"
+
+    # ── 向量存储检查 ──
+    try:
+        vector_dir = Path(settings.vector_store_path)
+        if vector_dir.exists():
+            index_files = list(vector_dir.glob("*.index")) + list(vector_dir.glob("*.pkl"))
+            checks["vector_store"] = len(index_files) > 0
+            if not checks["vector_store"]:
+                status = "degraded"
+        else:
+            checks["vector_store"] = False
+            status = "degraded"
+    except Exception:
+        checks["vector_store"] = False
+        status = "degraded"
+
+    # ── 长效记忆检查 ──
+    try:
+        from src.core.long_term_memory import get_long_term_memory
+        ltm = get_long_term_memory()
+        stats = ltm.get_stats()
+        checks["long_term_memory"] = True
+    except Exception:
+        checks["long_term_memory"] = False
+        status = "degraded"
+
+    # ── 本地模型检查（仅检查是否已加载） ──
+    try:
+        from src.core.utils.llm import is_local_model_loaded
+        checks["local_model"] = is_local_model_loaded()
+    except Exception:
+        checks["local_model"] = False
+
+    # ── API 熔断器状态 ──
+    try:
+        from src.core.utils.llm import get_api_breaker_stats
+        breaker_stats = get_api_breaker_stats()
+        checks["llm_api"] = breaker_stats["available"]
+        if not breaker_stats["available"]:
+            status = "degraded"
+    except Exception:
+        checks["llm_api"] = False
+        status = "degraded"
+
+    return {
+        "status": status,
+        "model": settings.llm_model,
+        "version": "0.1.0",
+        "checks": checks,
+        "timestamp": time.time(),
+    }
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -93,6 +172,20 @@ async def compression_metrics():
     """LLM 对话压缩指标"""
     from src.core.memory import ConversationMemory
     return ConversationMemory.get_compression_stats()
+
+
+@app.get("/metrics/long_term_memory")
+async def long_term_memory_metrics():
+    """长效记忆指标"""
+    from src.core.long_term_memory import get_long_term_memory
+    return get_long_term_memory().get_stats()
+
+
+@app.get("/metrics/circuit_breaker")
+async def circuit_breaker_metrics():
+    """熔断器指标"""
+    from src.core.utils.llm import get_api_breaker_stats
+    return get_api_breaker_stats()
 
 
 # ── Frontend SPA (最后注册，避免覆盖 API 路由) ──

@@ -2,6 +2,8 @@
 
 **轻量级 Multi-Agent RAG 系统** | 个人项目 | 2026.06
 
+> 💡 从 travel-agent-guide 项目中借鉴了 Circuit Breaker、ToolRegistry、Planner+Reflection、快慢车道意图识别合并策略等设计，显著提升了系统鲁棒性和编排灵活性。
+
 ---
 
 ## 🎯 项目动机与背景
@@ -39,24 +41,39 @@
 
 ## 📋 项目简介
 
-基于 **Function Calling** 意图识别 + **LangGraph 多轮编排**的多智能体食谱问答系统，搭载 **Qwen3.5-35B (ModelScope API)** 大模型
+基于 **Function Calling** 意图识别（快慢车道 + 显式合并策略）+ **LangGraph 多轮编排**的多智能体食谱问答系统，搭载 **Qwen3.5-35B (ModelScope API)** 大模型
 （API 不可用时自动回退本地 **Qwen2.5-0.5B**），
 通过混合检索（BM25 + FAISS + BGE-Reranker）与 SQL 安全查询，为 5000 条真实食谱提供智能问答服务。
-支持**多轮对话**（ConversationMemory 按 session 管理）、**LLM 对话压缩**（后台异步压缩旧轮次，压缩率 >90%）和 **Critic 重试循环**（LangGraph 回边自动重试）。
+支持**多轮对话**（ConversationMemory 按 session 管理）、**LLM 对话压缩**（后台异步压缩旧轮次，压缩率 >90%）、**Critic 重试循环**（LangGraph 回边自动重试）、**Circuit Breaker 熔断保护**（API 快速失败）、**LongTermMemory 长效记忆**（跨会话用户偏好）、**Planner/Reflection Agent 模式**（复杂请求分解 + LLM 深度质检）以及 **ToolRegistry 工具注册中心**（自动发现与 MCP 兼容目录）。
 
 ---
 
 ## 🏗️ 系统架构
 
 ```
+```
 用户输入 (文本/图片)
       │
       ▼
-┌──────────┐    Function Calling 意图识别
-│  Router   │ ─────────────────────→ Intent + 槽位
-└──────────┘    规则快速通道 (0ms)     text_rag / nutrition / image / substitute / pdf_parse
+┌──────────────────────────────────────────────────────────┐
+│  LongTermMemory.load(user_id) — 加载跨会话用户偏好        │
+└──────────────────────────────────────────────────────────┘
       │
-      ▼  (Worker + Fallback 并行)
+      ▼
+┌──────────┐    Function Calling 意图识别 (快慢车道 + 合并策略)
+│  Router   │ ──────────────────────────────────────────→ Intent
+└──────────┘    ① 规则快速通道 (0ms, confidence ≥ 0.9 直接命中)
+                 ② Function Calling 慢通道 → 4 态合并: agree / prefer_rule / prefer_fc / fc_failed
+      │
+      ├──→ Planner?  (检测"规划/安排/先…再…"关键词)
+      │     │
+      │     ▼
+      │  ┌──────────┐    ToolRegistry 自动发现工具
+      │  │  Planner  │ ──→ search_recipes / search_nutrition / …
+      │  │  Agent    │ ──→ 分解步骤 → 逐步执行 → LLM 汇总
+      │  └──────────┘
+      │     │
+      └─────┤  (Worker + Fallback 并行)
 ╔══════════════════════════════════════════════════════════════════╗
 ║  asyncio.gather(WORKER, FALLBACK) —  src/orchestrator/graph.py  ║
 ╚══════════════════════════════════════════════════════════════════╝
@@ -77,25 +94,34 @@ Critic          直接切换
 通过    失败    (检索片段)
  │       │
  │       ▼
- │   切换到兜底
+ │   ┌────────────┐
+ │   │ Reflection │ ← LLM 深度质检: 事实一致性/完整性/安全性/可操作性
+ │   │  Agent     │ → 需要修订则自动修正, 无问题则通过
+ │   └────────────┘
  │       │
  └───────┘
       │
       ▼
+  LongTermMemory.save(user_id, interaction) — 保存本次交互
+      │
+      ▼
   Formatter ──→ 最终回答
+```
 ```
 
 ### Agent 职责
 
 | Agent | 职责 | 核心能力 |
 |-------|------|----------|
-| **Router** | 意图识别 + 槽位提取 | 规则快速通道 + Function Calling (ModelScope API), 7 类意图, 自动提取菜名/食材/营养槽位 |
+| **Router** | 意图识别 + 槽位提取 | 规则快速通道 + Function Calling, **快慢车道 4 态合并策略** (`fast_lane_only`/`agree`/`conflict_prefer_rule`/`conflict_prefer_fc`) |
+| **Planner** | 复杂请求分解执行 | LLM 生成多步骤计划 → **ToolRegistry** 逐步调用工具 → LLM 汇总结果 |
+| **Reflection** | 深度质量检测 | LLM 驱动: 事实一致性/完整性/安全性/可操作性; 自动修订并替换 draft |
 | **TextRAG** | 食谱问答 | HybridRetriever (BM25+FAISS+Rerank) + LLM 生成 |
 | **NutritionSQL** | 营养查询 | **三路策略**: ①关键词 SQL 模板(0 LLM 延迟) ②LLM 翻译 SQL → SQLSandbox 执行 ③混合检索兜底; 带菜系感知过滤 |
 | **ImageSearch** | 图片/文本检索 | 混合检索 + CLIP 图文检索 ✅ (openai/clip-vit-base-patch32) |
 | **Substitution** | 食材替换推理 | LLM 链式推理, JSON 结构化输出 |
 | **PDFParse** | PDF 文档解析 | 双层引擎: PyMuPDF 快速模式 + magic-pdf (MinerU) 增强模式, 自动降级 |
-| **Critic** | 事实核查 + 合规 | 规则检查 + LLM 辅助, 中英文免责检测; 当 `need_disclaimer=True` 时跳过免责检查（由 Formatter 统一添加）|
+| **Critic** | 事实核查 + 合规 | 规则检查 + LLM 辅助, 中英文免责检测; 输出交给 Reflection 做深度质检 |
 | **Formatter** | 结构化输出 | 最终润色 + **免责声明唯一添加点**（避免 Critic 误判导致重试循环）|
 
 ---
@@ -202,6 +228,8 @@ make benchmark
 | GET  | `/metrics/agents` | Agent 调用统计 |
 | GET  | `/metrics/business` | 业务指标 |
 | GET  | `/metrics/compression` | 对话压缩统计信息 |
+| GET  | `/metrics/circuit_breaker` | Circuit Breaker 状态 (state/failure_count/last_failure_time/total_failure_count) |
+| GET  | `/metrics/long_term_memory` | LongTermMemory 统计 (总用户数/总条目数) |
 
 #### 请求示例
 
@@ -313,7 +341,9 @@ recipe-assistant/
 ├── src/
 │   ├── agents/                    # 🤖 多 Agent 层
 │   │   ├── base.py                # 基类: 重试/超时/日志/Fallback
-│   │   ├── router.py              # 意图识别 (Function Calling + 规则混合)
+│   │   ├── router.py              # 意图识别 (Function Calling + 规则混合 + 快慢车道 4 态合并)
+│   │   ├── planner.py             # 🆕 复杂请求分解 → 逐步执行 → 汇总
+│   │   ├── reflection.py          # 🆕 LLM 深度质检 (事实/完整/安全/可操作)
 │   │   ├── text_rag.py            # 文本问答 (检索 + LLM)
 │   │   ├── image_search.py        # 图文检索
 │   │   ├── nutrition_sql.py       # 营养 SQL 查询
@@ -324,6 +354,7 @@ recipe-assistant/
 │   ├── core/                      # 🔧 核心组件
 │   │   ├── config.py              # Pydantic 配置
 │   │   ├── pdf_parser.py          # PDF 解析引擎 (PyMuPDF + magic-pdf)
+│   │   ├── long_term_memory.py    # 🆕 长效记忆 (JSON 文件持久化, 跨会话用户偏好)
 │   │   ├── retrievers/
 │   │   │   ├── hybrid.py          # BM25 + FAISS + Rerank
 │   │   │   └── clip_retriever.py  # CLIP 图文检索 (openai/clip-vit-base-patch32)
@@ -331,13 +362,18 @@ recipe-assistant/
 │   │   │   ├── validator.py       # sqlglot AST 校验
 │   │   │   └── sandbox.py         # 只读 + 超时熔断
 │   │   ├── memory.py              # 多轮对话记忆管理 (session_id 基)
+│   │   ├── tools/                 # 🆕 工具注册中心
+│   │   │   ├── __init__.py        # 导出 Registry + get_tool_registry() 单例
+│   │   │   ├── registry.py        # ToolRegistry 类 (注册/发现/MCP 兼容目录)
+│   │   │   └── retrieval_tools.py # 食谱检索工具 (注册到 ToolRegistry)
 │   │   ├── utils/
-│   │   │   ├── llm.py             # API 优先 + 本地回退 LLM 封装 (含 Function Calling)
+│   │   │   ├── llm.py             # API 优先 + 本地回退 LLM 封装 (含 Function Calling + Circuit Breaker)
+│   │   │   ├── circuit_breaker.py # 🆕 异步三态熔断器 (CLOSED/OPEN/HALF_OPEN)
 │   │   │   ├── logger.py          # 结构化日志
 │   │   │   └── metrics.py         # Prometheus 指标
 │   │   └── adapters/              # 领域适配 (预留)
 │   ├── orchestrator/
-│   │   ├── graph.py               # LangGraph 状态图 (10 节点)
+│   │   ├── graph.py               # LangGraph 状态图 (12 节点: +planner +reflection)
 │   │   └── supervisor.py          # 编排器: LangGraph 包装层 + ask() 入口
 │   ├── api/
 │   │   ├── main.py                # FastAPI 入口
@@ -849,6 +885,161 @@ GET /metrics/compression  # 压缩指标端点
 - **摘要累积**：新摘要追加到已有摘要后，不丢失历史
 - **Token 预算触发**：仅当未压缩轮次超预算时才执行，避免频繁调用 LLM
 
+### 16. Circuit Breaker（异步三态熔断器）
+
+> 📥 从 travel-agent-guide 移植，为 LLM API 调用提供快速失败保护。
+
+**三态机**：
+
+```
+CLOSED (正常)
+  → 连续 3 次失败 → OPEN（立即拒绝请求，不等待超时）
+    → 30s 后 → HALF_OPEN（放行 1 个探测请求）
+      → 成功 → CLOSED
+      → 失败 → OPEN（重置等待期，翻倍至 60s max）
+```
+
+**集成位置**：`src/core/utils/llm.py` — 所有 API 调用前先 `circuit_breaker.check()`，若 OPEN 则直接走本地回退，不浪费等待时间。
+
+```python
+# src/core/utils/circuit_breaker.py
+class CircuitBreakerState(enum.Enum):
+    CLOSED = "closed"        # 正常
+    OPEN = "open"            # 熔断
+    HALF_OPEN = "half_open"  # 半开探测
+
+class AsyncCircuitBreaker:
+    async def check(self) -> bool:            # 检查是否允许请求
+    async def record_success(self):           # 记录成功
+    async def record_failure(self):           # 记录失败（计数满 → OPEN）
+    async def get_status(self) -> dict:       # 获取状态（用于 /metrics/circuit_breaker）
+```
+
+**监控**：`GET /metrics/circuit_breaker` 返回当前 state / failure_count / last_failure_time / total_failure_count。
+
+### 17. LongTermMemory（长效记忆 — 跨会话用户偏好）
+
+> 📥 从 travel-agent-guide 移植，零外部依赖，JSON 文件持久化。
+
+**存储内容**（按 `user_id` 索引）：
+- `dietary_preferences` — 饮食偏好（素食、低卡、无麸质等）
+- `favorite_recipes` — 收藏食谱
+- `allergies` — 食物过敏
+- `cuisine_preferences` — 菜系偏好
+- `recent_queries` — 最近查询（最近 20 条）
+- `interaction_history` — 交互历史摘要
+
+**核心 API**：
+
+```python
+# src/core/long_term_memory.py
+class LongTermMemory:
+    async def load(self, user_id: str) -> dict       # 加载用户记忆
+    async def save(self, user_id: str, interaction)   # 保存单轮交互
+    async def update_preferences(self, user_id, **prefs)  # 更新偏好
+    async def get_stats(self) -> dict                  # 统计（用于 /metrics/long_term_memory）
+```
+
+**集成**：`graph.py` 中 `load_memory_node` 之后调用 `LongTermMemory.load(user_id)`，`save_memory_node` 后调用 `save()`，使长效记忆在每轮对话中持续累积。
+
+### 18. ToolRegistry（工具注册中心）
+
+> 📥 从 travel-agent-guide 移植，MCP 兼容的工具注册与发现机制。
+
+**核心组件**：
+
+```python
+# src/core/tools/registry.py
+@dataclass
+class RegisteredTool:
+    name: str                    # 工具名（snake_case，唯一标识）
+    description: str             # 自然语言描述（LLM 理解用）
+    func: Callable               # 实际执行函数
+    parameters: dict             # JSON Schema 参数定义
+    category: str = "general"    # 分类标签
+
+class ToolRegistry:
+    def register(self, tool: RegisteredTool)
+    def has(self, name: str) -> bool
+    def get(self, name: str) -> RegisteredTool
+    def list_tools(self, category: str = None) -> list[RegisteredTool]
+    def mcp_tool_catalog(self) -> dict                  # MCP 兼容目录输出
+    def discover_package(self, package_path: str)       # 自动发现模块内工具
+```
+
+**注册的检索工具**（`retrieval_tools.py`）：
+
+| 工具名 | 功能 | 参数 |
+|--------|------|------|
+| `search_recipes` | 食谱混合检索 | query, top_k |
+| `search_nutrition` | 营养信息查询 | food, nutrient |
+| `search_substitution` | 食材替代推荐 | ingredient, cuisine |
+
+**自动发现**：`discover_package("src.core.tools")` 扫描模块内所有 `register_*` 函数，自动注册到 `ToolRegistry` 单例。
+
+**Planner Agent 集成**：Planner 工具调用时通过 `get_tool_registry().invoke(tool_name, **kwargs)` 执行，返回 JSON 结果供 LLM 汇总。
+
+### 19. Planner Agent（复杂请求分解执行）
+
+> 📥 从 travel-agent-guide 移植，将复杂请求拆分为可执行步骤。
+
+**适用场景**：用户提出多步骤需求（如"先推荐低卡食谱，再查意大利面做法，然后做个对比"）。
+
+**工作流**：
+
+```
+PlannerAgent.run(query)
+  → LLM 生成 JSON 计划: {"goal": "...", "steps": [{"tool": "search_recipes", "args": {...}}, ...]}
+  → _parse_plan() → 验证 JSON 结构
+  → _execute_step(step) → get_tool_registry().invoke(tool_name, **kwargs)
+  → 所有步骤完成 → _summarize() → LLM 汇总各步骤结果
+```
+
+**集成**：`graph.py` 的 `route_by_intent` 检测 `_PLANNER_KEYWORDS`（"规划/安排/先…再…/plan/schedule"），路由到 `planner_node`，完成后根据是否有步骤进入 Worker 或输出结果。
+
+### 20. Reflection Agent（LLM 深度质量检测）
+
+> 📥 从 travel-agent-guide 移植，在 Critic 之后做更深度的质检。
+
+**检测维度**：
+
+| 维度 | 检查项 |
+|------|--------|
+| **事实一致性** | draft 是否有虚构内容、与检索结果是否矛盾 |
+| **完整性** | 是否全面覆盖用户问题，有无遗漏关键点 |
+| **安全性** | 是否包含不安全建议（过敏源、极端饮食等） |
+| **可操作性** | 步骤是否清晰，用户能否按描述执行 |
+
+**自动修订**：若 `passed=False` 且 `revised` 优于 draft，自动替换最终输出。
+
+**流程集成**：
+```
+critic → passed → reflection_node
+                    ├── passed=True → save_memory
+                    └── passed=False → auto-revision → 替换 draft → save_memory
+```
+
+### 21. Router 快慢车道 4 态合并策略
+
+> 📥 从 travel-agent-guide 移植，解决规则通道与 Function Calling 冲突问题。
+
+**合并逻辑**：
+
+```
+执行规则快速通道 → 得到 rule_intent + rule_confidence
+执行 Function Calling → 得到 fc_intent
+
+比较:
+  ① rule_confidence ≥ 0.9 → fast_lane_only (规则直接命中，跳过 FC)
+  ② rule_intent == fc_intent → agree (取规则 confidence + 0.1 boost)
+  ③ rule_intent ≠ fc_intent → conflict
+       ├── rule_confidence 更高 → conflict_prefer_rule
+       └── fc_confidence 更高 → conflict_prefer_fc
+  ④ FC 失败 → fc_failed_fallback_to_rule
+```
+
+每个 `RouterResult` 携带 `merge_strategy` 字段，便于 debug 和监控。
+
 ---
 
 ## � 性能仪表盘
@@ -925,6 +1116,12 @@ GET /metrics/compression  # 压缩指标端点
 | 评测 Benchmark | 🔲 待完善 | 基础框架就绪 |
 | PDF 文档解析 (PDFParse) | ✅ 完成 | 双层引擎: PyMuPDF + magic-pdf (MinerU), 自动降级. Router 预检查 + PDFParseAgent |
 | LLM 对话压缩 (方案 A) | ✅ 完成 | LLM 摘要压缩旧轮次, 压缩率 90.3%, 后台异步不阻塞 |
+| **Circuit Breaker** 熔断器 | ✅ 完成 | 异步三态 (CLOSED/OPEN/HALF_OPEN), 保护 API 调用, 快速失败走本地回退 |
+| **LongTermMemory** 长效记忆 | ✅ 完成 | JSON 文件持久化, 跨会话用户偏好/过敏/收藏, 零外部依赖 |
+| **ToolRegistry** 工具注册中心 | ✅ 完成 | MCP 兼容目录, 自动发现包内工具, Planner Agent 集成 |
+| **Planner Agent** 规划代理 | ✅ 完成 | 复杂请求分解 → 逐步调工具 → LLM 汇总, 支持"先…再…"类查询 |
+| **Reflection Agent** 质检代理 | ✅ 完成 | LLM 深度质检 (事实/完整/安全/可操作), 自动修订替换 |
+| **Router 快慢车道合并** | ✅ 完成 | 规则快速通道 + Function Calling 4 态合并: fast_lane_only/agree/prefer_rule/prefer_fc/fc_failed |
 
 ---
 
@@ -932,10 +1129,13 @@ GET /metrics/compression  # 压缩指标端点
 
 | 类别 | 技术 |
 |------|------|
-| **编排** | LangGraph StateGraph (10 节点) + 自定义 Worker 派发 |
+| **编排** | LangGraph StateGraph (12 节点) + 自定义 Worker 派发 |
 | **LLM** | Qwen3.5-35B-A3B (API) / Qwen2.5-0.5B (本地回退) |
 | **嵌入** | all-MiniLM-L6-v2 (384dim) |
 | **检索** | BM25 + FAISS (IndexFlatIP) + BGE-Reranker + CLIP 图文检索 |
+| **熔断** | 异步三态 Circuit Breaker (CLOSED / OPEN / HALF_OPEN) |
+| **长效记忆** | LongTermMemory (JSON 文件持久化, 零外部依赖) |
+| **工具注册** | ToolRegistry (MCP 兼容目录, 自动发现) |
 | **PDF 解析** | PyMuPDF (快速模式) + magic-pdf / MinerU (增强模式) — 自动降级 |
 | **SQL** | sqlite3 + sqlglot (AST 校验) |
 | **API** | FastAPI + SSE 流式 |

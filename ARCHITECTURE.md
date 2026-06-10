@@ -28,14 +28,18 @@
 
 | 能力 | 说明 |
 |------|------|
-| **意图识别** | 7 类意图 + 槽位提取（Function Calling + 规则混合） |
+| **意图识别** | 7 类意图 + 槽位提取（规则快速通道 + Function Calling 快慢车道 4 态合并） |
 | **食谱问答** | BM25 + FAISS + BGE-Reranker 三级检索 + LLM 生成 |
 | **营养查询** | 关键词 SQL 模板 → LLM 翻译 SQL → 混合检索三路兜底 |
 | **图文检索** | CLIP 零样本以图搜菜名 |
 | **食材替换** | LLM 链式推理 + JSON 结构化输出 |
 | **PDF 解析** | 双层引擎（PyMuPDF + magic-pdf），自动降级 |
 | **多轮对话** | Redis 持久化 + Token 感知滑动窗口 + LLM 压缩 |
-| **质量质检** | Critic 重试循环（最大 2 次） |
+| **质量质检** | Critic 重试循环 + Reflection Agent LLM 深度质检 |
+| **熔断保护** | 异步三态 Circuit Breaker（CLOSED/OPEN/HALF_OPEN）|
+| **长效记忆** | LongTermMemory JSON 文件持久化（跨会话用户偏好）|
+| **工具注册** | ToolRegistry MCP 兼容目录 + 自动发现 |
+| **规划执行** | Planner Agent 复杂请求分解 → 逐步调工具 → LLM 汇总 |
 
 ### 1.3 设计原则
 
@@ -66,22 +70,30 @@
         │
         ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  编排层 (src/orchestrator/) — LangGraph StateGraph (10 节点)        │
+│  编排层 (src/orchestrator/) — LangGraph StateGraph (12 节点)        │
 │                                                                      │
 │  ┌──────────┐                                                        │
 │  │  init    │ ← 初始化 state: request_id, start_time                │
 │  └────┬─────┘                                                        │
 │       ▼                                                              │
 │  ┌─────────────┐                                                     │
-│  │ load_memory │ ← 加载 Redis/内存中的对话历史                       │
+│  │ load_memory │ ← 加载对话历史 + LongTermMemory.load(user_id)      │
 │  └────┬────────┘                      ┌───────────────────────┐     │
 │       ▼                                │  ConversationMemory   │     │
 │  ┌──────────┐                          │  ┌─────────────────┐  │     │
 │  │  Router  │── Intent + 槽位 ──────→  │  │ Redis (主存储)   │  │     │
-│  └────┬─────┘                          │  ├─────────────────┤  │     │
+│  └────┬─────┘  快慢车道 4 态合并       │  ├─────────────────┤  │     │
 │       │                                │  │ 内存兜底 (备用)  │  │     │
-│       ▼ (按 intent 条件派发)            │  └─────────────────┘  │     │
-│  ┌──────────┐                          └───────────────────────┘     │
+│       ├──→ Planner? 检测规划关键词      │  └─────────────────┘  │     │
+│       │    │                           └───────────────────────┘     │
+│       │    ▼                                                         │
+│       │  ┌──────────┐   ToolRegistry                                 │
+│       │  │ Planner  │──→ search_recipes / search_nutrition / etc.    │
+│       │  │ Agent    │──→ 分解 → 逐步执行 → LLM 汇总                  │
+│       │  └────┬─────┘                                                │
+│       └───────┤                                                      │
+│               ▼ (按 intent 条件派发)                                  │
+│  ┌──────────┐                                                        │
 │  │  worker  │ ← 统一派发: TextRAG/NutritionSQL/Substitution/...     │
 │  └────┬─────┘    asyncio.gather(Worker, Fallback)                    │
 │       │                                                              │
@@ -101,8 +113,13 @@
 │   │    retry ≥ 2 → 走预计算兜底                                     │
 │   │                                                                  │
 │   ▼                                                                  │
+│  ┌────────────┐                                                      │
+│  │ Reflection │ ← LLM 深度质检 (事实/完整/安全/可操作)              │
+│  │  Agent     │ → 需要修订则自动修正, 无问题通过                     │
+│  └────┬───────┘                                                      │
+│       ▼                                                              │
 │  ┌─────────────┐                                                     │
-│  │ save_memory │ ← 保存对话 + 后台 asyncio.create_task(压缩)        │
+│  │ save_memory │ ← 保存对话 + LongTermMemory.save() + 后台压缩      │
 │  └────┬────────┘                                                     │
 │       ▼                                                              │
 │  ┌───────────┐                                                       │
@@ -114,16 +131,20 @@
         │
         ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Agent 层 (src/agents/) — 8 个 Agent 各司其职                       │
+│  Agent 层 (src/agents/) — 10 个 Agent 各司其职                      │
 │                                                                      │
 │  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌──────────────┐      │
-│  │ Router   │  │ TextRAG  │  │NutritionSQL│  │ ImageSearch  │      │
-│  │ 意图识别  │  │ 食谱问答  │  │ 营养查询    │  │ 图文检索     │      │
+│  │ Router   │  │ Planner  │  │ Reflection  │  │ TextRAG      │      │
+│  │ 意图识别  │  │ 规划执行  │  │ 深度质检    │  │ 食谱问答     │      │
 │  └──────────┘  └──────────┘  └────────────┘  └──────────────┘      │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
-│  │Critic    │  │Formatter │  │Substitut.│  │PDFParse  │            │
-│  │ 质量质检  │  │ 输出格式化│  │ 食材替换  │  │PDF解析    │            │
+│  │Nutrition │  │ImageSearch│  │Critic    │  │Formatter │            │
+│  │SQL       │  │ 图文检索  │  │ 质量质检  │  │ 输出格式化│            │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘            │
+│  ┌──────────┐  ┌──────────┐                                         │
+│  │Substitut.│  │PDFParse  │                                         │
+│  │ 食材替换  │  │PDF解析   │                                         │
+│  └──────────┘  └──────────┘                                         │
 └──────────────────────────────────────────────────────────────────────┘
         │
         ▼
@@ -137,10 +158,11 @@
 │  │  │ BM25+FAISS │  │ 以图搜菜名      │  │ CrossEncoder    │  │    │
 │  │  └────────────┘  └────────────────┘  └──────────────────┘  │    │
 │  ├─────────────────────────────────────────────────────────────┤    │
-│  │  LLM 系统 (utils/llm.py) — API 优先 + 本地回退单例          │    │
+│  │  LLM 系统 (utils/llm.py) — API 优先 + Circuit Breaker + 本地回退 │
 │  │  ┌──────────────────┐  ┌──────────────────────────────┐    │    │
 │  │  │ ModelScope API   │  │ Qwen2.5-0.5B (本地, 全局单例) │    │    │
 │  │  │ Qwen3.5-35B      │  │ ~1.5GB 显存, lazy load       │    │    │
+│  │  │ ← Circuit Breaker│  │ ← API OPEN 时自动降级         │    │    │
 │  │  └──────────────────┘  └──────────────────────────────┘    │    │
 │  ├─────────────────────────────────────────────────────────────┤    │
 │  │  安全沙箱 (sql/) — sqlglot AST 校验 + SQLite 只读执行       │    │
@@ -148,11 +170,19 @@
 │  │  │ validator.py │  │ sandbox.py (超时熔断 3s)         │    │    │
 │  │  └──────────────┘  └──────────────────────────────────┘    │    │
 │  ├─────────────────────────────────────────────────────────────┤    │
+│  │  工具注册中心 (tools/) — MCP 兼容目录                        │    │
+│  │  ┌──────────────┐  ┌──────────────────────────────────┐    │    │
+│  │  │ registry.py  │  │ retrieval_tools.py               │    │    │
+│  │  │ ToolRegistry │  │ search_recipes / nutrition / sub │    │    │
+│  │  └──────────────┘  └──────────────────────────────────┘    │    │
+│  ├─────────────────────────────────────────────────────────────┤    │
 │  │  PDF 解析 (pdf_parser.py) — PyMuPDF + magic-pdf 双层      │    │
 │  ├─────────────────────────────────────────────────────────────┤    │
 │  │  对话记忆 (memory.py) — Redis + Token 滑动窗口 + LLM 压缩  │    │
 │  ├─────────────────────────────────────────────────────────────┤    │
-│  │  监控 (utils/metrics.py) — Agent 调用统计 + 业务指标       │    │
+│  │  长效记忆 (long_term_memory.py) — JSON 文件持久化, 零依赖  │    │
+│  ├─────────────────────────────────────────────────────────────┤    │
+│  │  监控 (utils/metrics.py) — Agent + Circuit Breaker 指标    │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -161,22 +191,26 @@
 
 ## 3. 核心组件详解
 
-### 3.1 Router — 三阶段意图识别
+### 3.1 Router — 三阶段意图识别 + 快慢车道 4 态合并
 
 ```
 query → 规则快速通道 (0ms, 正则匹配)
            │
-   置信度 ≥ 0.92 ──→ 直接返回
+   置信度 ≥ 0.9 ──→ fast_lane_only (直接返回, 跳过 FC)
            │
-        < 0.92
+        < 0.9
            ↓
-    Function Calling (Qwen3.5-35B, ~2s)
+    Function Calling (Qwen3.5-35B, ~2s)  慢通道
            │
-      成功 ──→ intent + 槽位 (结构化 JSON)
-           │
-      失败
            ↓
-       规则兜底 (置信度 0.7)
+    4 态合并策略:
+    ┌─────────────────────────────────────────────────────┐
+    │ rule_intent == fc_intent  → agree (boost +0.1)     │
+    │ rule_intent ≠ fc_intent                            │
+    │   ├ rule_confidence 更高 → conflict_prefer_rule    │
+    │   └ fc_confidence 更高  → conflict_prefer_fc       │
+    │ FC 完全失败            → fc_failed_fallback_to_rule│
+    └─────────────────────────────────────────────────────┘
 ```
 
 **7 类意图映射**：
@@ -191,7 +225,7 @@ query → 规则快速通道 (0ms, 正则匹配)
 | `pdf_parse` | PDF 文档解析 | 上传 PDF 文件 |
 | `chitchat` | 闲聊/无关话题 | "你好"、"天气" |
 
-**关键代码**：`src/agents/router.py` — `_INTENT_TOOLS` 定义 7 个 OpenAPI Function
+**关键代码**：`src/agents/router.py` — `_INTENT_TOOLS` 定义 7 个 OpenAPI Function, `_merge_results()` 实现 4 态合并
 
 ### 3.2 TextRAG — 混合检索 + LLM 生成
 
@@ -278,27 +312,125 @@ critic_passed=True 或 retry_count ≥ 2 → save_memory → formatter → END
 - 添加引用标注（provenance 转可读格式）
 - **免责声明唯一添加点**（避免 Critic 误判导致重试循环）
 
+### 3.8 Planner Agent — 复杂请求分解执行
+
+> 📥 从 travel-agent-guide 移植。
+
+**适用场景**：用户提出多步骤需求（如"先推荐低卡食谱，再查意大利面做法，然后做个对比"）。
+
+```
+PlannerAgent.run(query)
+  → LLM 生成 JSON 计划: {"goal": "...", "steps": [{"tool": "search_recipes", "args": {...}}, ...]}
+  → _parse_plan() → 验证 JSON 结构
+  → _execute_step(step) → get_tool_registry().invoke(tool_name, **kwargs)
+  → 所有步骤完成 → _summarize() → LLM 汇总各步骤结果
+```
+
+**集成点**：`graph.py` 的 `route_by_intent` 检测 `_PLANNER_KEYWORDS`（"规划/安排/先…再…/plan/schedule"），
+路由到 `planner_node`。`route_after_planner` 判断是否有步骤 → 有则进入 worker，无则直接输出。
+
+### 3.9 Reflection Agent — LLM 深度质量检测
+
+> 📥 从 travel-agent-guide 移植。
+
+在 Critic 规则质检之后，做更深层的 LLM 驱动质量检测：
+
+| 维度 | 检查项 |
+|------|--------|
+| **事实一致性** | draft 是否有虚构内容、与检索结果是否矛盾 |
+| **完整性** | 是否全面覆盖用户问题，有无遗漏关键点 |
+| **安全性** | 是否包含不安全建议（过敏源、极端饮食等） |
+| **可操作性** | 步骤是否清晰，用户能否按描述执行 |
+
+**自动修订**：若 `passed=False` 且 `revised` 优于 draft，自动替换最终输出。
+**流程**：`critic → reflection_node → passed → save_memory` 或 `revised → 替换 draft → save_memory`
+
+### 3.10 Circuit Breaker — 异步三态熔断器
+
+> 📥 从 travel-agent-guide 移植，为 LLM API 调用提供快速失败保护。
+
+```python
+class AsyncCircuitBreaker:
+    state: CLOSED | OPEN | HALF_OPEN
+    failure_count: int          # 连续失败计数
+    last_failure_time: float
+    total_failure_count: int    # 总失败次数
+
+    async def check(self) -> bool           # OPEN 时返回 False, 不走 API
+    async def record_success(self)          # HALF_OPEN + 成功 → CLOSED
+    async def record_failure(self)          # 计数满 → OPEN
+```
+
+**状态机**：`CLOSED → (3 次失败) → OPEN → (30s) → HALF_OPEN → (1 探测成功) → CLOSED`
+`OPEN` 状态下 LLM API 调用立即返回失败，走本地回退，不浪费等待时间。
+
+**监控**：`GET /metrics/circuit_breaker` 暴露当前状态和计数。
+
+### 3.11 LongTermMemory — 长效记忆
+
+> 📥 从 travel-agent-guide 移植，零外部依赖，JSON 文件持久化。
+
+按 `user_id` 索引存储跨会话用户画像：
+
+| 字段 | 说明 |
+|------|------|
+| `dietary_preferences` | 饮食偏好（素食、低卡等）|
+| `favorite_recipes` | 收藏食谱列表 |
+| `allergies` | 食物过敏信息 |
+| `cuisine_preferences` | 菜系偏好（American、Chinese 等）|
+| `recent_queries` | 最近 20 条查询 |
+| `interaction_history` | 交互历史摘要 |
+
+**集成**：`graph.py` 中 `load_memory_node` 之后加载 → `save_memory_node` 之后保存，使长效记忆在每轮对话中持续累积。
+
+### 3.12 ToolRegistry — 工具注册中心
+
+> 📥 从 travel-agent-guide 移植，MCP 兼容的工具注册与发现机制。
+
+```python
+class ToolRegistry:
+    def register(self, tool: RegisteredTool)    # 注册工具
+    def has(self, name: str) -> bool            # 检查工具是否存在
+    def get(self, name: str) -> RegisteredTool   # 获取工具
+    def list_tools(self, category=None)          # 按分类列出工具
+    def mcp_tool_catalog(self) -> dict           # MCP 兼容目录输出
+    def discover_package(self, path: str)        # 自动发现模块内工具
+    async def invoke(self, name: str, **kwargs)  # 调用工具
+```
+
+**注册的工具**：
+
+| 工具名 | 功能 | 用途集成 |
+|--------|------|---------|
+| `search_recipes` | 混合检索食谱 | TextRAG, Planner |
+| `search_nutrition` | 营养信息查询 | NutritionSQL, Planner |
+| `search_substitution` | 食材替代推荐 | Substitution, Planner |
+
+**自动发现**：`discover_package("src.core.tools")` 扫描 `register_*` 函数自动注册。
+
 ---
 
 ## 4. 数据流
 
-### 4.1 单轮问答流程
+### 4.1 单轮问答流程（含新组件）
 
 ```
-Client → POST /ask {"query": "红烧肉怎么做？"}
+Client → POST /ask {"query": "先推荐低卡食谱，再查意大利面做法"}
   → FastAPI → RecipeOrchestrator.ask()
     → LangGraph graph.ainvoke(initial_state)
       → init_node: 生成 request_id
-      → load_memory_node: 加载对话历史 (Redis)
-      → router_node: Function Calling 识别 intent + 槽位
-        → intent: ingredient_recommend, slots: {recipe_name: "红烧肉"}
-      → worker_node: 按 intent 派发到 TextRAGAgent
-        → asyncio.gather(TextRAG.run, _prepare_text_fallback)
-          → HybridRetriever.retrieve("braised pork belly")
-          → LLM generate (Qwen3.5-35B)
-        → Worker 成功 → 走 Critic
-      → critic_node: 质量检查
-      → save_memory_node: 保存对话到 Redis + 后台触发 LLM 压缩
+      → load_memory_node: 加载对话历史 (Redis) + LongTermMemory.load(user_id)
+      → router_node: 快慢车道意图识别 + 4 态合并
+        → 检测到规划关键词 → planner_node
+      → planner_node: PlannerAgent.run(query)
+        → 分解步骤 → ToolRegistry.invoke("search_recipes", ...) → ToolRegistry.invoke("search_recipes", ...)
+        → LLM 汇总 → plan_executed=True
+      → route_after_planner: 有步骤 → worker_node (常规 intent) | 无步骤 → critic_node
+      → worker_node: 按 intent 派发
+        → asyncio.gather(Worker, Fallback)
+      → critic_node: 规则质检
+      → reflection_node: LLM 深度质检 (自动修订)
+      → save_memory_node: 保存对话 + LongTermMemory.save() + 后台 LLM 压缩
       → formatter_node: 格式化输出 + 引用标注
     → 返回 AskResponse
 ```
@@ -376,10 +508,18 @@ compress_if_needed()
 ### 6.1 LLM 不可用
 
 ```
-API 调用 → 超时/失败
-  → 回退本地 Qwen2.5-0.5B (全局单例, lazy load)
-    → 本地模型也失败
-      → 纯检索结果拼接 (无 LLM)
+API 调用 → Circuit Breaker.check() → OPEN (3 次连续失败)
+  → 不发起 API 请求, 立即走本地回退
+  → 30s 后 HALF_OPEN → 放行 1 个探测请求
+    → 成功 → CLOSED (恢复正常)
+    → 失败 → OPEN (重置等待, 翻倍至 60s max)
+
+API 调用 → Circuit Breaker.check() → CLOSED
+  → 正常发起 → 超时/失败
+    → record_failure() → 失败计数 +1
+    → 回退本地 Qwen2.5-0.5B (全局单例, lazy load)
+      → 本地模型也失败
+        → 纯检索结果拼接 (无 LLM)
 ```
 
 ### 6.2 Redis 不可用
@@ -408,7 +548,13 @@ magic-pdf 不可用/解析失败
   → 仅提取纯文本, 丢失表格/图片/公式
 ```
 
----
+### 6.5 LongTermMemory 持久化
+
+```
+JSON 文件写入失败 (磁盘满/权限)
+  → 静默跳过保存, 不影响主流程
+  → 下次 `load()` 返回空记忆, 功能完整
+```
 
 ## 7. 性能优化
 
@@ -425,6 +571,9 @@ magic-pdf 不可用/解析失败
 | 免责声明统一管理 | 消除重试循环 | critic.py, formatter.py |
 | Redis 持久化 | 会话跨请求保持 | memory.py |
 | LLM 对话压缩 | Token 节省 **90.3%** | memory.py |
+| **Circuit Breaker 熔断** | 快速失败, 避免 API 等待超时 | circuit_breaker.py |
+| **Router 规则快速通道** | 置信度 ≥ 0.9 直接命中, 0ms 延迟 | router.py |
+| **LongTermMemory JSON 持久化** | 零外部依赖, 无网络开销 | long_term_memory.py |
 
 ### 7.2 Benchmark 指标
 
@@ -497,6 +646,9 @@ docker compose up -d
 | **持久化** | Redis + SQLite | Redis 会话管理, SQLite 结构化数据 |
 | **PDF 解析** | PyMuPDF + magic-pdf | 双层引擎, 复杂 PDF 增强解析 |
 | **监控** | 自定义 MetricsCollector | 轻量内存指标, 可对接 Prometheus |
+| **熔断器** | AsyncCircuitBreaker (自实现) | 异步三态, LLM API 快速失败保护 |
+| **长效记忆** | LongTermMemory (自实现) | JSON 文件持久化, 零外部依赖 |
+| **工具注册** | ToolRegistry (自实现) | MCP 兼容目录, 自动发现包内工具 |
 | **配置** | pydantic-settings | 类型安全, .env 文件加载 |
 
 ---

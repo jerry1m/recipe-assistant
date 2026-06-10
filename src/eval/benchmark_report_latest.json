@@ -1,0 +1,470 @@
+{
+  "retrieval": {
+    "total_queries": 26,
+    "avg_latency_ms": 405.6,
+    "p50_ms": 128.2,
+    "p95_ms": 1275.6,
+    "p99_ms": 2152.7,
+    "warm_latency_ms": 1220.0,
+    "cold_start_ms": 45.2,
+    "min_ms": 10.9,
+    "max_ms": 2152.7,
+    "bm25_weight": 0.3,
+    "vector_weight": 0.5,
+    "rerank_weight": 0.2
+  },
+  "intent_recognition": {
+    "total_queries": 30,
+    "overall_accuracy_pct": 90.0,
+    "correct": 27,
+    "wrong": 3,
+    "p50_latency_ms": 1978.0,
+    "p95_latency_ms": 3523.2,
+    "avg_latency_ms": 1693.5,
+    "by_category": {
+      "chitchat": {
+        "accuracy_pct": 100.0,
+        "total": 3,
+        "correct": 3,
+        "avg_latency_ms": 2386.9
+      },
+      "image_search": {
+        "accuracy_pct": 100.0,
+        "total": 3,
+        "correct": 3,
+        "avg_latency_ms": 1397.1
+      },
+      "ingredient_recommend": {
+        "accuracy_pct": 80.0,
+        "total": 5,
+        "correct": 4,
+        "avg_latency_ms": 2349.3
+      },
+      "nutrition_filter": {
+        "accuracy_pct": 80.0,
+        "total": 5,
+        "correct": 4,
+        "avg_latency_ms": 433.6
+      },
+      "pdf_parse": {
+        "accuracy_pct": 100.0,
+        "total": 2,
+        "correct": 2,
+        "avg_latency_ms": 0.5
+      },
+      "step_qa": {
+        "accuracy_pct": 100.0,
+        "total": 8,
+        "correct": 8,
+        "avg_latency_ms": 2392.3
+      },
+      "substitution": {
+        "accuracy_pct": 75.0,
+        "total": 4,
+        "correct": 3,
+        "avg_latency_ms": 1599.8
+      }
+    }
+  },
+  "sql_safety": {
+    "attack_queries": 12,
+    "attack_block_rate_pct": 91.7,
+    "attack_blocked": 11,
+    "normal_queries": 6,
+    "normal_pass_rate_pct": 100.0,
+    "normal_passed": 6,
+    "details": {
+      "attack": [
+        {
+          "sql": "DROP TABLE recipes",
+          "desc": "DROP 语句",
+          "blocked": true,
+          "error": "禁止使用 DROP 语句"
+        },
+        {
+          "sql": "DELETE FROM nutrition",
+          "desc": "DELETE 语句",
+          "blocked": true,
+          "error": "禁止使用 DELETE 语句"
+        },
+        {
+          "sql": "ALTER TABLE ingredients ADD COLUMN hack ",
+          "desc": "ALTER 语句",
+          "blocked": true,
+          "error": "禁止使用 ALTER 语句"
+        },
+        {
+          "sql": "INSERT INTO recipes VALUES (1,'hack')",
+          "desc": "INSERT 语句",
+          "blocked": true,
+          "error": "禁止使用 INSERT 语句"
+        },
+        {
+          "sql": "UPDATE nutrition SET calories=0 WHERE id",
+          "desc": "UPDATE 语句",
+          "blocked": true,
+          "error": "禁止使用 UPDATE 语句"
+        },
+        {
+          "sql": "SELECT * FROM users",
+          "desc": "越权表访问",
+          "blocked": true,
+          "error": "表 users 不在白名单中"
+        },
+        {
+          "sql": "SELECT * FROM recipes; DROP TABLE nutrit",
+          "desc": "分号注入",
+          "blocked": true,
+          "error": "仅允许 SELECT 查询"
+        },
+        {
+          "sql": "SELECT * FROM nutrition WHERE 1=1; --",
+          "desc": "SQL 注释",
+          "blocked": true,
+          "error": "仅允许 SELECT 查询"
+        },
+        {
+          "sql": "SELECT * FROM nutrition UNION SELECT * F",
+          "desc": "UNION 注入",
+          "blocked": true,
+          "error": "仅允许 SELECT 查询"
+        },
+        {
+          "sql": "' OR 1=1 --",
+          "desc": "OR 注入",
+          "blocked": true,
+          "error": "SQL 解析失败: Error tokenizing '' OR 1=1 -'"
+        },
+        {
+          "sql": "SELECT * FROM nutrition WHERE name='' OR",
+          "desc": "恒真条件",
+          "blocked": false,
+          "error": ""
+        },
+        {
+          "sql": "'; SELECT * FROM nutrition; --",
+          "desc": "分号逃逸",
+          "blocked": true,
+          "error": "SQL 解析失败: Error tokenizing ''; SELECT * FROM nutrition; -'"
+        }
+      ],
+      "normal": [
+        {
+          "sql": "SELECT * FROM recipes LIMIT 5",
+          "desc": "简单查询",
+          "passed": true,
+          "rows": 5,
+          "error": null
+        },
+        {
+          "sql": "SELECT name, cook_time FROM recipes WHER",
+          "desc": "条件查询",
+          "passed": true,
+          "rows": 100,
+          "error": null
+        },
+        {
+          "sql": "SELECT r.name, n.calories FROM recipes r",
+          "desc": "JOIN 查询",
+          "passed": true,
+          "rows": 10,
+          "error": null
+        },
+        {
+          "sql": "SELECT cuisine, COUNT(*) as cnt FROM rec",
+          "desc": "聚合查询",
+          "passed": true,
+          "rows": 100,
+          "error": null
+        },
+        {
+          "sql": "SELECT name FROM recipes WHERE name LIKE",
+          "desc": "模糊查询",
+          "passed": true,
+          "rows": 100,
+          "error": null
+        },
+        {
+          "sql": "SELECT * FROM nutrition ORDER BY calorie",
+          "desc": "排序查询",
+          "passed": true,
+          "rows": 5,
+          "error": null
+        }
+      ]
+    }
+  },
+  "clip_retrieval": {
+    "total_queries": 10,
+    "avg_latency_ms": 987.1,
+    "p50_ms": 2.4,
+    "p95_ms": 9847.6,
+    "details": [
+      {
+        "query": "Roasted Carrots and Beets",
+        "top5_names": [
+          "Roasted Carrots and Beets with the Juiciest Pork Chops",
+          "Roasted Carrots and Beets with Pecan Pesto",
+          "Roasted Carrots and Parsnips with Cumin",
+          "Oh Yeah Baby Glazed Carrots",
+          "Roasted Carrots and Cippolini Onions"
+        ],
+        "top5_scores": [
+          0.8551,
+          0.8505,
+          0.809,
+          0.7934,
+          0.7615
+        ],
+        "latency_ms": 9847.6
+      },
+      {
+        "query": "chocolate cake",
+        "top5_names": [
+          "Big Chocolate Birthday Cake",
+          "Vanilla Velvet/Chocolate Cake",
+          "Chocolate Sheet Cake",
+          "Molten Chocolate Oooozy Cake",
+          "Flourless Dark Chocolate Cake"
+        ],
+        "top5_scores": [
+          0.9104,
+          0.9036,
+          0.903,
+          0.9029,
+          0.8993
+        ],
+        "latency_ms": 3.4
+      },
+      {
+        "query": "beef steak",
+        "top5_names": [
+          "Steakhouse Steaks",
+          "Steakhouse Steaks",
+          "Sunny's Smothered Rib Eye Steak",
+          "Open-Faced NY Strip \\Philly Cheese Steaks\\",
+          "Baltimore Beef Bad Boy"
+        ],
+        "top5_scores": [
+          0.9137,
+          0.9137,
+          0.881,
+          0.88,
+          0.8779
+        ],
+        "latency_ms": 2.7
+      },
+      {
+        "query": "chicken soup",
+        "top5_names": [
+          "Monday to Friday Chicken Noodle Soup",
+          "GZ's Chicken Stock",
+          "Chicken in Milk",
+          "Noodle Soup for Needy People",
+          "Drunken Chicken ...heavy on the sauce!"
+        ],
+        "top5_scores": [
+          0.9193,
+          0.8669,
+          0.864,
+          0.8592,
+          0.8572
+        ],
+        "latency_ms": 2.6
+      },
+      {
+        "query": "pasta with tomato",
+        "top5_names": [
+          "Tomato Sauce for Spaghetti and Meatballs",
+          "Pasta Sauce",
+          "Shaved Squash and Tomato Pasta",
+          "Spanish Chicken and Pasta",
+          "Tomato Sauce"
+        ],
+        "top5_scores": [
+          0.8884,
+          0.8865,
+          0.8676,
+          0.8674,
+          0.8661
+        ],
+        "latency_ms": 2.4
+      },
+      {
+        "query": "fresh salad",
+        "top5_names": [
+          "Tangy and Tossed Salad",
+          "Salad Libre",
+          "Farmer's Salad",
+          "Wilted Greens",
+          "Wilted Green Salad"
+        ],
+        "top5_scores": [
+          0.9018,
+          0.8918,
+          0.8647,
+          0.8644,
+          0.8633
+        ],
+        "latency_ms": 2.4
+      },
+      {
+        "query": "fish",
+        "top5_names": [
+          "Soused Herrings",
+          "Bossam",
+          "Turista",
+          "Fried Fish",
+          "Ay! Caramba"
+        ],
+        "top5_scores": [
+          0.8521,
+          0.8455,
+          0.8451,
+          0.8418,
+          0.837
+        ],
+        "latency_ms": 2.4
+      },
+      {
+        "query": "vegetable soup",
+        "top5_names": [
+          "Roasted Vegetable Soup",
+          "Vegetable Stock",
+          "Vegetable Stock",
+          "Vegetable Stock",
+          "Meatball Soup"
+        ],
+        "top5_scores": [
+          0.9076,
+          0.8721,
+          0.8721,
+          0.8721,
+          0.8688
+        ],
+        "latency_ms": 2.3
+      },
+      {
+        "query": "rice",
+        "top5_names": [
+          "Rice a Munee",
+          "Rice and Beans",
+          "Stormy Rice",
+          "Bossam",
+          "Bee Beem Bhop"
+        ],
+        "top5_scores": [
+          0.8999,
+          0.8628,
+          0.8504,
+          0.8322,
+          0.8251
+        ],
+        "latency_ms": 2.4
+      },
+      {
+        "query": "pancake",
+        "top5_names": [
+          "Crunchy Pancakes",
+          "Piggy Pancakes",
+          "Eggless Pancakes",
+          "Oatmeal Pancakes",
+          "The Best Buttermilk Pancakes"
+        ],
+        "top5_scores": [
+          0.894,
+          0.8739,
+          0.8675,
+          0.8619,
+          0.8569
+        ],
+        "latency_ms": 2.4
+      }
+    ]
+  },
+  "context_compression": {
+    "total_turns": 16,
+    "chars_before": 312,
+    "chars_after": 312,
+    "tokens_before_est": 156,
+    "tokens_after_est": 156,
+    "compression_ratio_pct": 0.0,
+    "compression_metrics": {}
+  },
+  "e2e": {
+    "total_queries": 6,
+    "successful": 6,
+    "avg_latency_ms": 31380.7,
+    "p50_ms": 40198.4,
+    "p95_ms": 86298.9,
+    "details": [
+      {
+        "query": "你好",
+        "intent": "chitchat",
+        "latency_ms": 2432.2,
+        "confidence": 0.5,
+        "answer_preview": "你好！我是食谱助手，可以帮你推荐菜谱、查询营养信息、替换食材等。请问有什么可以帮你的？"
+      },
+      {
+        "query": "推荐一道红烧肉的菜谱",
+        "intent": "ingredient_recommend",
+        "latency_ms": 86298.9,
+        "confidence": 0.92,
+        "answer_preview": "\n\n---\n📎 参考来源：\n- recipes.json (chunk: real_00962_steps, score"
+      },
+      {
+        "query": "麻婆豆腐怎么做",
+        "intent": "step_qa",
+        "latency_ms": 7207.1,
+        "confidence": 0.92,
+        "answer_preview": "根据提供的食谱，没有找到麻婆豆腐的做法。这些食谱分别是脆皮豆腐、椰子脆皮豆腐、豆腐甜点以及泰式辣炒豆腐，都不包含麻婆豆腐"
+      },
+      {
+        "query": "番茄炒蛋的热量是多少",
+        "intent": "nutrition_filter",
+        "latency_ms": 46151.8,
+        "confidence": 0.92,
+        "answer_preview": "根据提供的食谱上下文，没有找到“番茄炒蛋”的相关信息，因此无法提供其热量数据。\n\n⚠️ 营养建议仅供参考，具体请以专业营"
+      },
+      {
+        "query": "没有鸡蛋可以用什么代替",
+        "intent": "substitution",
+        "latency_ms": 5996.1,
+        "confidence": 0.92,
+        "answer_preview": "以下是为您推荐的食材替代方案：\n\n• **没有鸡蛋可以用什么代替** → **** (比例 1:1)\n  原因: LLM"
+      },
+      {
+        "query": "我想看看红烧肉的照片",
+        "intent": "image_search",
+        "latency_ms": 40198.4,
+        "confidence": 0.92,
+        "answer_preview": "🔍 根据「我想看看红烧肉的照片」找到以下菜谱:\n1. **Real 02761**\n2. **Real 02255**\n"
+      }
+    ]
+  },
+  "rerank_cache": {
+    "description": "Rerank 缓存对英文查询的加速效果（CrossEncoder 结果缓存）",
+    "mechanism": "缓存 (query, chunk_id) → score，避免重复推理",
+    "cold_p50_ms": 879.3,
+    "hot_p50_ms": 11.6,
+    "variant_p50_ms": 536.6,
+    "speedup_cold_to_hot": "76.1x",
+    "cold_latencies_ms": [
+      796.2,
+      2140.4,
+      879.3
+    ],
+    "hot_latencies_ms": [
+      12.9,
+      10.1,
+      11.6
+    ],
+    "variant_latencies_ms": [
+      361.4,
+      2108.7,
+      536.6
+    ],
+    "cache_hit_rate_pct": 50.0,
+    "cache_size": 113
+  }
+}

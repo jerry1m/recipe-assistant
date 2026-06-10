@@ -1,16 +1,21 @@
 """
-LangGraph 状态图 — 多轮对话 + Critic 重试循环
+LangGraph 状态图 — 多轮对话 + Planner + Critic 重试循环 + Reflection 质检
 
-   [start] → load_memory → router (with context) → worker (by intent)
-                                                    ↓ (并行: worker + fallback)
-           → critic → {passed: save_memory → formatter → [end]}
+   [start] → load_memory → router → {planner? planner → worker : worker}
+                                                          ↓ (并行: worker + fallback)
+           → critic → {passed: reflection → save_memory → formatter → [end]}
                       {failed & retry<max: revision → worker (retry with feedback)}
-                      {failed & retry>=max: save_memory → formatter → [end]}
+                      {failed & retry>=max: reflection → save_memory → formatter → [end]}
+
+模式说明:
+  - Planner: 对"规划一周菜单"等复杂请求，先分解为子步骤再逐一执行
+  - Reflection: LLM 驱动的深度质检（比规则 Critic 更深层语义审查），critic 通过后执行
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 import uuid
 from typing import Any, Literal, TypedDict
@@ -23,6 +28,8 @@ from src.agents import (
     ImageSearchAgent,
     NutritionSQLAgent,
     PDFParseAgent,
+    PlannerAgent,
+    ReflectionAgent,
     RouterAgent,
     SubstitutionAgent,
     TextRAGAgent,
@@ -33,11 +40,22 @@ from src.api.schemas import (
     FormatterResult,
     IntentType,
     PDFParseResult,
+    PlannerResult,
     ProvenanceItem,
+    ReflectionResult,
     RouterResult,
     TextRAGResult,
 )
 from src.core.memory import ConversationMemory
+from src.core.long_term_memory import get_long_term_memory
+
+# ── 需要走 Planner 的关键词（意图匹配后二次检测） ──
+_PLANNER_KEYWORDS = (
+    "规划", "计划", "安排", "设计",
+    "一周", "每天", "每日", "三餐",
+    "菜单", "套餐", "搭配", "组合",
+    "plan", "weekly", "daily", "menu", "meal prep",
+)
 
 
 class RecipePipelineState(TypedDict, total=False):
@@ -46,6 +64,7 @@ class RecipePipelineState(TypedDict, total=False):
     request_id: str
     query: str
     session_id: str
+    user_id: str               # 用户标识（用于长效记忆）
     images: list[str]
     files: list[str]            # 文件列表（base64 编码的 PDF 等）
     intent_hint: str | None
@@ -58,6 +77,7 @@ class RecipePipelineState(TypedDict, total=False):
     # 对话记忆
     conversation_context: str       # 历史摘要，传给 Router
     last_slots: dict[str, Any]     # 上一轮槽位
+    user_preference_context: str    # 用户偏好上下文（长效记忆）
 
     # 执行结果
     draft: str
@@ -68,10 +88,22 @@ class RecipePipelineState(TypedDict, total=False):
     fallback_draft: str
     fallback_chunks: list[dict[str, Any]]
 
+    # Planner 规划
+    use_planner: bool                # 是否启动 Planner
+    plan_goal: str                   # 规划目标
+    plan_steps: list[str]            # 规划步骤列表
+    plan_summary: str                # Planner 执行汇总
+    plan_executed: bool              # Planner 是否已执行
+
     # 质检
     critic_passed: bool
     critic_reasons: list[str]
     critic_suggestions: list[str]
+
+    # Reflection 反思（LLM 深层质检）
+    reflection_passed: bool
+    reflection_critique: str
+    reflection_revised: str
 
     # 重试循环控制
     retry_count: int
@@ -108,12 +140,37 @@ async def init_node(state: RecipePipelineState) -> dict:
 
 
 async def load_memory_node(state: RecipePipelineState) -> dict:
-    """加载对话记忆，构造 Token 感知的滑动窗口上下文传给 Router"""
+    """加载对话记忆 + 长效记忆（用户偏好），构造上下文传给 Router"""
     session_id = state.get("session_id", "default")
+    user_id = state.get("user_id", "")
+
     memory = await ConversationMemory.get_or_create(session_id)
+    conversation_context = await memory.get_context(max_tokens=2048)
+
+    # 加载长效记忆（用户偏好），注入 Router 上下文
+    user_preference_context = ""
+    if user_id:
+        try:
+            ltm = get_long_term_memory()
+            user_preference_context = await ltm.get_preference_context(user_id)
+        except Exception as e:
+            import structlog
+            structlog.get_logger().warning(
+                "long_term_memory.load_failed", user_id=user_id, error=str(e)
+            )
+
+    # 将用户偏好拼接到对话上下文中
+    if user_preference_context:
+        conversation_context = (
+            f"{conversation_context}\n[{user_preference_context}]"
+            if conversation_context
+            else f"[{user_preference_context}]"
+        )
+
     return {
-        "conversation_context": await memory.get_context(max_tokens=2048),
+        "conversation_context": conversation_context,
         "last_slots": await memory.get_last_slots(),
+        "user_preference_context": user_preference_context,
     }
 
 
@@ -338,7 +395,7 @@ async def revision_node(state: RecipePipelineState) -> dict:
 
 
 async def save_memory_node(state: RecipePipelineState) -> dict:
-    """保存本轮对话到记忆，并在后台启动 LLM 压缩"""
+    """保存本轮对话到记忆 + 长效记忆（用户偏好），后台启动 LLM 压缩"""
     session_id = state.get("session_id", "default")
     memory = await ConversationMemory.get_or_create(session_id)
     await memory.add_turn(
@@ -350,7 +407,33 @@ async def save_memory_node(state: RecipePipelineState) -> dict:
     )
     # 后台触发 LLM 压缩（不阻塞响应），下次请求时摘要已就绪
     asyncio.create_task(memory.compress_if_needed())
+
+    # 保存到长效记忆（后台，不阻塞）
+    user_id = state.get("user_id", "")
+    if user_id:
+        asyncio.create_task(_save_long_term_memory(state, user_id))
+
     return {}
+
+
+async def _save_long_term_memory(state: RecipePipelineState, user_id: str):
+    """后台保存长效记忆（最近查询 + 偏好提取）"""
+    try:
+        ltm = get_long_term_memory()
+        # 记录最近查询
+        await ltm.add_recent_query(user_id, state["query"])
+        # 自动提取偏好
+        await ltm.extract_and_save_preferences(
+            user_id=user_id,
+            query=state["query"],
+            intent=state.get("intent", ""),
+            answer=state.get("draft", ""),
+        )
+    except Exception as e:
+        import structlog
+        structlog.get_logger().warning(
+            "long_term_memory.save_failed", user_id=user_id, error=str(e)
+        )
 
 
 async def formatter_node(state: RecipePipelineState) -> dict:
@@ -367,20 +450,104 @@ async def formatter_node(state: RecipePipelineState) -> dict:
     }
 
 
+# ── Planner 规划节点 ──
+
+async def planner_node(state: RecipePipelineState) -> dict:
+    """将复杂请求分解为子步骤并依次执行，结果写入 draft 供后续 Worker 使用。"""
+    query = state["query"]
+    user_preferences = state.get("user_preference_context", "")
+
+    agent = PlannerAgent()
+    result: PlannerResult = await agent.run(
+        query=query,
+        context=state.get("conversation_context", ""),
+        user_preferences=user_preferences,
+    )
+
+    return {
+        "use_planner": True,
+        "plan_goal": result.goal,
+        "plan_steps": result.steps,
+        "plan_summary": result.summary,
+        "plan_executed": True,
+        # 将 Planner 汇总设为 draft（后续 Worker 可在此基础上细化）
+        "draft": result.summary if result.success else "",
+        "agent_results": {
+            "planner": {
+                "goal": result.goal,
+                "steps": result.steps,
+                "step_count": len(result.steps),
+                "success": result.success,
+            }
+        },
+    }
+
+
+# ── Reflection 反思质检节点（LLM 驱动的深层审查） ──
+
+async def reflection_node(state: RecipePipelineState) -> dict:
+    """对 draft 进行 LLM 驱动的深度质检，必要时修订文本。"""
+    draft = state.get("draft", "")
+    if not draft:
+        return {"reflection_passed": True}
+
+    agent = ReflectionAgent()
+    result: ReflectionResult = await agent.run(
+        draft=draft,
+        query=state.get("query", ""),
+        context=state.get("conversation_context", ""),
+        provenance=state.get("provenance", []),
+    )
+
+    # 如果修订版有改进，使用修订版
+    revised = result.revised
+    if revised and revised != draft and len(revised) > len(draft) * 0.5:
+        draft = revised
+
+    return {
+        "reflection_passed": result.passed,
+        "reflection_critique": result.critique,
+        "reflection_revised": revised,
+        "draft": draft,
+    }
+
+
 # ══════════════════════════════════════════
 # 条件边
 # ══════════════════════════════════════════
 
-def route_by_intent(state: RecipePipelineState) -> Literal["worker", "chitchat_direct"]:
-    """Router → Worker 路由"""
+def _needs_planning(query: str, intent: str) -> bool:
+    """检测是否需启动 Planner（关键词匹配 + 特定意图）。"""
+    if intent == IntentType.CHITCHAT.value:
+        return False
+    q_lower = query.lower()
+    return any(kw in q_lower for kw in _PLANNER_KEYWORDS)
+
+
+def route_by_intent(
+    state: RecipePipelineState,
+) -> Literal["worker", "planner", "chitchat_direct"]:
+    """Router → Worker/Planner/闲聊直通 路由"""
     intent = state.get("intent", "chitchat")
     if intent == IntentType.CHITCHAT.value:
         return "chitchat_direct"
+    # 检测是否需要规划
+    if _needs_planning(state.get("query", ""), intent):
+        return "planner"
     return "worker"
 
 
-def after_critic(state: RecipePipelineState) -> Literal["save_memory", "revision"]:
-    """Critic → 下一步：通过则保存记忆，不通过则重试或兜底"""
+def route_after_planner(
+    state: RecipePipelineState,
+) -> Literal["worker", "critic"]:
+    """Planner → 下一步：有步骤则走 Worker 细化，否则直接进 Critic"""
+    if state.get("plan_executed") and state.get("plan_steps"):
+        return "worker"
+    return "critic"
+
+
+def after_critic(state: RecipePipelineState) -> Literal["reflection", "revision"]:
+    """Critic → 下一步：通过则进 Reflection 深度质检，不通过则重试"""
     import structlog
     logger = structlog.get_logger()
     critic_passed = state.get("critic_passed", True)
@@ -394,10 +561,10 @@ def after_critic(state: RecipePipelineState) -> Literal["save_memory", "revision
         reasons=state.get("critic_reasons", []),
     )
     if critic_passed:
-        return "save_memory"
+        return "reflection"
     if retry_count < max_retries:
         return "revision"
-    return "save_memory"  # 已达最大重试次数，走 formatter
+    return "reflection"  # 已达最大重试次数，走 Reflection 尝试最后修订
 
 
 async def chitchat_direct_node(state: RecipePipelineState) -> dict:
@@ -421,9 +588,11 @@ def build_recipe_graph() -> StateGraph:
     workflow.add_node("init", init_node)
     workflow.add_node("load_memory", load_memory_node)
     workflow.add_node("router", router_node)
+    workflow.add_node("planner", planner_node)
     workflow.add_node("worker", worker_node)
     workflow.add_node("chitchat_direct", chitchat_direct_node)
     workflow.add_node("critic", critic_node)
+    workflow.add_node("reflection", reflection_node)
     workflow.add_node("revision", revision_node)
     workflow.add_node("save_memory", save_memory_node)
     workflow.add_node("formatter", formatter_node)
@@ -433,10 +602,17 @@ def build_recipe_graph() -> StateGraph:
     workflow.add_edge("init", "load_memory")
     workflow.add_edge("load_memory", "router")
 
-    # Router → Worker（意图派发）
+    # Router → Worker / Planner / 闲聊
     workflow.add_conditional_edges("router", route_by_intent, {
         "worker": "worker",
+        "planner": "planner",
         "chitchat_direct": "chitchat_direct",
+    })
+
+    # Planner → Worker（细化执行）或 Critic（已直接生成）
+    workflow.add_conditional_edges("planner", route_after_planner, {
+        "worker": "worker",
+        "critic": "critic",
     })
 
     # Worker → Critic（闲聊不走 Critic）
@@ -444,12 +620,15 @@ def build_recipe_graph() -> StateGraph:
 
     # Critic 质检结果分支
     workflow.add_conditional_edges("critic", after_critic, {
-        "save_memory": "save_memory",
+        "reflection": "reflection",
         "revision": "revision",
     })
 
     # 重试循环：revision → worker（走回统一 Worker 节点）
     workflow.add_edge("revision", "worker")
+
+    # Reflection → save_memory（LLM 深度质检后保存）
+    workflow.add_edge("reflection", "save_memory")
 
     # 通过质检后：save_memory → formatter → END
     workflow.add_edge("save_memory", "formatter")

@@ -184,7 +184,12 @@ _NAME_TO_INTENT = {
 
 
 class RouterAgent(BaseAgent):
-    """意图识别 + 槽位提取（Function Calling + 规则混合，支持多轮上下文）"""
+    """意图识别 + 槽位提取（快慢车道：规则快速通道 → Function Calling → 显式合并）
+
+    快车道: _rule_based_classify() — 关键词匹配，0 LLM 延迟
+    慢车道: _fc_classify() — Function Calling，高精度 + 槽位提取
+    合并: _merge_results() — 参考 travel-agent-guide 策略，一致抬升/冲突取高
+    """
 
     def __init__(self):
         super().__init__(name="router", timeout=10.0, max_retries=2)
@@ -195,9 +200,7 @@ class RouterAgent(BaseAgent):
         last_slots = kwargs.get("last_slots", {})
         files = kwargs.get("files", [])
 
-        # ── 规则快速通道 ──
-
-        # PDF 文件预检查：只要有上传的 PDF 文件即路由到 pdf_parse
+        # ── PDF 文件预检查（最高优先级） ──
         if files:
             return RouterResult(
                 intent=IntentType.PDF_PARSE,
@@ -207,36 +210,111 @@ class RouterAgent(BaseAgent):
                     "pages": "",
                 },
                 confidence=0.95,
+                data={"merge_strategy": "pdf_file_detected"},
             )
 
+        # ── 快车道：规则匹配 ──
         rule_intent, rule_confidence, rule_slots = self._rule_based_classify(query)
 
         # 高置信度规则命中 → 直接返回（0 LLM 延迟）
         if rule_confidence >= 0.9:
-            slots = {"query": query, **rule_slots}
             return RouterResult(
                 intent=rule_intent,
-                slots=slots,
+                slots={"query": query, **rule_slots},
                 confidence=rule_confidence,
+                data={"merge_strategy": "fast_lane_only"},
             )
 
-        # ── Function Calling 分类（带上下文） ──
+        # ── 慢车道：Function Calling 分类（带上下文） ──
         fc_intent, fc_slots, fc_confidence = await self._fc_classify(
             query, conversation_context, last_slots,
         )
-        if fc_intent is not None:
-            fc_slots["query"] = query
+
+        if fc_intent is None:
+            # FC 失败 → 兜底走规则结果
             return RouterResult(
-                intent=fc_intent,
-                slots=fc_slots,
-                confidence=fc_confidence,
+                intent=rule_intent,
+                slots={"query": query, **rule_slots},
+                confidence=max(rule_confidence, 0.5),
+                data={"merge_strategy": "fc_failed_fallback_to_rule"},
             )
 
-        # ── 兜底：规则结果 ──
+        # ── 显式合并：规则与 FC 结果 ──
+        return self._merge_results(
+            query=query,
+            rule_intent=rule_intent,
+            rule_confidence=rule_confidence,
+            rule_slots=rule_slots,
+            fc_intent=fc_intent,
+            fc_confidence=fc_confidence,
+            fc_slots=fc_slots,
+        )
+
+    def _merge_results(
+        self,
+        *,
+        query: str,
+        rule_intent: IntentType,
+        rule_confidence: float,
+        rule_slots: dict,
+        fc_intent: IntentType,
+        fc_confidence: float,
+        fc_slots: dict,
+    ) -> RouterResult:
+        """显式合并快车道与慢车道结果。
+
+        策略（参考 travel-agent-guide IntentRecognizer._merge）：
+        1. 一致：规则与 FC 意图相同 → 抬升置信度
+        2. 冲突：规则置信度显著高 → 取规则
+        3. 冲突：FC 置信度更高 → 取 FC（含槽位信息）
+        4. 冲突：两者接近且规则是中置信（0.7）→ FC 可信度更高，取 FC
+        """
+        CONFIDENCE_BOOST = 0.05  # 一致时的置信提升
+        CONFLICT_MARGIN = 0.10   # 冲突时认为"显著更高"的阈值
+
+        if rule_intent == fc_intent:
+            # 一致 → 抬升置信度
+            merged_conf = min(1.0, (rule_confidence + fc_confidence) / 2 + CONFIDENCE_BOOST)
+            merged_slots = {**rule_slots, **fc_slots}
+            return RouterResult(
+                intent=rule_intent,
+                slots={"query": query, **merged_slots},
+                confidence=merged_conf,
+                data={
+                    "merge_strategy": "agree",
+                    "rule_confidence": rule_confidence,
+                    "fc_confidence": fc_confidence,
+                },
+            )
+
+        # 冲突 → 取置信更高者
+        if rule_confidence >= fc_confidence + CONFLICT_MARGIN:
+            # 规则置信显著更高 → 取规则（但用 FC 槽位补充）
+            merged_slots = {**fc_slots, **rule_slots}
+            return RouterResult(
+                intent=rule_intent,
+                slots={"query": query, **merged_slots},
+                confidence=rule_confidence,
+                data={
+                    "merge_strategy": "prefer_rule",
+                    "rule_confidence": rule_confidence,
+                    "fc_confidence": fc_confidence,
+                    "fc_intent": fc_intent.value,
+                },
+            )
+
+        # FC 置信更高或两者接近 → 取 FC（含槽位信息，对下游更有价值）
+        merged_slots = {**rule_slots, **fc_slots}
         return RouterResult(
-            intent=rule_intent,
-            slots={"query": query, **rule_slots},
-            confidence=rule_confidence,
+            intent=fc_intent,
+            slots={"query": query, **merged_slots},
+            confidence=fc_confidence,
+            data={
+                "merge_strategy": "prefer_fc",
+                "rule_confidence": rule_confidence,
+                "fc_confidence": fc_confidence,
+                "rule_intent": rule_intent.value,
+            },
         )
 
     async def _fc_classify(

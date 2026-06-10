@@ -7,6 +7,8 @@ from .nutrition_sql import NutritionSQLAgent
 from .substitution import SubstitutionAgent
 from .critic import CriticAgent
 from .formatter import FormatterAgent
+from .planner import PlannerAgent
+from .reflection import ReflectionAgent
 
 __all__ = [
     "BaseAgent",
@@ -18,4 +20,6 @@ __all__ = [
     "SubstitutionAgent",
     "CriticAgent",
     "FormatterAgent",
+    "PlannerAgent",
+    "ReflectionAgent",
 ]

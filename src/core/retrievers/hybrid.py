@@ -68,6 +68,11 @@ class HybridRetriever(BaseRetriever):
         self._chunks_map: dict[str, dict] | None = None
         self._sentence_model = None
         self._rerank_model = None
+        # Rerank 结果缓存: {(query, chunk_id): score} — 避免重复的 CrossEncoder 推理
+        self._rerank_cache: dict[tuple[str, str], float] = {}
+        self._rerank_cache_max = 2000
+        self._rerank_cache_hits = 0
+        self._rerank_cache_misses = 0
 
     # ── 索引加载 ──
 
@@ -223,8 +228,24 @@ class HybridRetriever(BaseRetriever):
             ))
         return results
 
+    def clear_rerank_cache(self):
+        """清空 rerank 缓存（用于基准测试）"""
+        self._rerank_cache.clear()
+        self._rerank_cache_hits = 0
+        self._rerank_cache_misses = 0
+
+    def get_rerank_cache_stats(self) -> dict:
+        """获取缓存命中统计"""
+        total = self._rerank_cache_hits + self._rerank_cache_misses
+        return {
+            "hits": self._rerank_cache_hits,
+            "misses": self._rerank_cache_misses,
+            "hit_rate_pct": round(self._rerank_cache_hits / total * 100, 1) if total > 0 else 0.0,
+            "cache_size": len(self._rerank_cache),
+        }
+
     async def _rerank(self, query: str, chunks: list[Chunk]) -> list[Chunk]:
-        """Rerank 精排 — 使用 BGE-Reranker"""
+        """Rerank 精排 — 使用 BGE-Reranker（带 LRU 缓存）"""
         if not chunks:
             return chunks
 
@@ -233,11 +254,32 @@ class HybridRetriever(BaseRetriever):
                 from sentence_transformers import CrossEncoder
                 self._rerank_model = CrossEncoder("BAAI/bge-reranker-v2-m3", device="cuda")
 
-            pairs = [(query, c.content) for c in chunks]
-            scores = self._rerank_model.predict(pairs, show_progress_bar=False)
+            # ── 缓存查找：对每个 chunk 先查 cache ──
+            uncached_pairs: list[tuple[str, str]] = []
+            uncached_chunks: list[Chunk] = []
+            for c in chunks:
+                key = (query, c.chunk_id)
+                cached_score = self._rerank_cache.get(key)
+                if cached_score is not None:
+                    c.score = cached_score
+                    self._rerank_cache_hits += 1
+                else:
+                    uncached_pairs.append((query, c.content))
+                    uncached_chunks.append(c)
+                    self._rerank_cache_misses += 1
 
-            for c, s in zip(chunks, scores):
-                c.score = float(s)
+            # ── 仅对缓存未命中的 pair 执行推理 ──
+            if uncached_pairs:
+                scores = self._rerank_model.predict(uncached_pairs, show_progress_bar=False)
+                for c, s in zip(uncached_chunks, scores):
+                    score = float(s)
+                    c.score = score
+                    # 写入缓存
+                    key = (query, c.chunk_id)
+                    self._rerank_cache[key] = score
+                    # LRU 淘汰
+                    if len(self._rerank_cache) > self._rerank_cache_max:
+                        self._rerank_cache.pop(next(iter(self._rerank_cache)))
 
             chunks.sort(key=lambda x: x.score, reverse=True)
         except Exception:
